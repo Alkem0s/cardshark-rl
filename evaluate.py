@@ -101,16 +101,18 @@ def run_tournament(
     for hand_idx in range(num_hands):
         obs, info = env.reset()
         done = False
+        episode_reward = 0.0
 
         while not done:
             mask = env.action_mask()
             action, _ = model.predict(obs, action_masks=mask, deterministic=True)
             action = int(action)
             obs, reward, terminated, truncated, info = env.step(action)
+            episode_reward += reward
             done = terminated or truncated
 
-        hand_profits.append(reward)
-        total_profit += reward
+        hand_profits.append(episode_reward)
+        total_profit += episode_reward
 
     bb_per_100 = (total_profit / max(1, num_hands)) * 100
 
@@ -147,16 +149,18 @@ def run_random_baseline(
     for _ in range(num_hands):
         obs, info = env.reset()
         done = False
+        episode_reward = 0.0
 
         while not done:
             mask = env.action_mask()
             valid = np.where(mask == 1)[0]
             action = int(rng.choice(valid))
             obs, reward, terminated, truncated, info = env.step(action)
+            episode_reward += reward
             done = terminated or truncated
 
-        hand_profits.append(reward)
-        total_profit += reward
+        hand_profits.append(episode_reward)
+        total_profit += episode_reward
 
     bb_per_100 = (total_profit / max(1, num_hands)) * 100
 

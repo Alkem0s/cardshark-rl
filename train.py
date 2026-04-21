@@ -13,10 +13,10 @@ from pathlib import Path
 from typing import Optional
 
 from sb3_contrib import MaskablePPO
-from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
-from stable_baselines3.common.callbacks import BaseCallback, EvalCallback
+from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.logger import configure
+from stable_baselines3.common.monitor import Monitor
 
 from gym_wrapper import DrawPokerGymEnv, mask_fn
 
@@ -113,17 +113,25 @@ def train_model(
         rng_seed=seed,
     )
 
-    # Wrap with action masker
+    # Wrap with ActionMasker first so mask_fn has direct access to DrawPokerGymEnv
     env = ActionMasker(env, mask_fn)
 
-    # Configure logger
+    # Then Monitor on top so SB3 records episode rewards in infos
+    env = Monitor(env)
+
+    # Configure logger (tensorboard optional)
     model_log_dir = os.path.join(log_dir, model_name)
-    new_logger = configure(model_log_dir, ["stdout", "csv", "tensorboard"])
+    try:
+        import tensorboard  # noqa: F401
+        log_formats = ["stdout", "csv", "tensorboard"]
+    except ImportError:
+        log_formats = ["stdout", "csv"]
+    new_logger = configure(model_log_dir, log_formats)
 
     # Create model
     policy_kwargs = dict(net_arch=net_arch)
     model = MaskablePPO(
-        MaskableActorCriticPolicy,
+        "MlpPolicy",
         env,
         learning_rate=learning_rate,
         n_steps=n_steps,

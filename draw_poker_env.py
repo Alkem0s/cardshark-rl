@@ -285,10 +285,14 @@ class DrawPokerEnv(AECEnv):
 
     def _auto_step_opponent(self):
         """If it's the opponent's turn, auto-step until it's the RL agent's turn or game ends."""
+        max_iter = 100  # Safety guard against infinite loops
+        iters = 0
         while (
             self.agent_selection == "player_1"
             and not self._is_game_over()
+            and iters < max_iter
         ):
+            iters += 1
             opp_action = self._get_opponent_action()
             self._execute_action("player_1", opp_action)
 
