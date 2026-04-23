@@ -18,6 +18,7 @@ from draw_poker_env import (
     PHASE_PRE_DRAW, PHASE_POST_DRAW,
 )
 from opponents import NUM_ARCHETYPES
+from card_utils import hand_category
 
 
 class DrawPokerGymEnv(gym.Env):
@@ -41,6 +42,8 @@ class DrawPokerGymEnv(gym.Env):
         rolling_window: int = 50,
         render_mode: str | None = None,
         rng_seed: int | None = None,
+        opponent_schedule: str = "random",
+        block_size: int = 200,
     ):
         super().__init__()
 
@@ -56,12 +59,14 @@ class DrawPokerGymEnv(gym.Env):
             rolling_window=rolling_window,
             render_mode=render_mode,
             rng_seed=rng_seed,
+            opponent_schedule=opponent_schedule,
+            block_size=block_size,
         )
 
         # Determine obs size
         obs_size = self._env._compute_obs_size()
         self.observation_space = spaces.Box(
-            low=0.0, high=1.0, shape=(obs_size,), dtype=np.float32
+            low=-1.0, high=1.0, shape=(obs_size,), dtype=np.float32
         )
         self.action_space = spaces.Discrete(TOTAL_ACTIONS)
 
@@ -128,6 +133,15 @@ class DrawPokerGymEnv(gym.Env):
         truncated = self._env.truncations.get("player_0", False)
         reward = self._env.rewards.get("player_0", 0) + self._pending_reward
         self._pending_reward = 0.0
+
+        # Reward shaping
+        if not terminated and action == A_FOLD and self._env._bet_to_call.get("player_0", 0) == 0:
+            # Penalty for folding when checking was an option
+            reward -= 0.3
+
+        # Steal-attempt bonus: if agent raised and opponent folded, reward the steal
+        if terminated and action == A_RAISE and self._env.folded.get("player_1", False):
+            reward += 0.2
 
         self.episode_reward += reward
         self.episode_length += 1

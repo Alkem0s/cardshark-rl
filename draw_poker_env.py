@@ -27,7 +27,7 @@ from pettingzoo import AECEnv
 from pettingzoo.utils.agent_selector import agent_selector
 from gymnasium import spaces
 
-from card_utils import Deck, evaluate_hand, rank_of, normalize_card, normalize_hand_score
+from card_utils import Deck, evaluate_hand, rank_of, normalize_rank, normalize_suit, normalize_hand_score, hand_category
 from opponents import Opponent, make_opponent, make_random_opponent, NUM_ARCHETYPES
 
 
@@ -75,6 +75,8 @@ class DrawPokerEnv(AECEnv):
         rolling_window: int = 50,
         render_mode: str | None = None,
         rng_seed: int | None = None,
+        opponent_schedule: str = "random",
+        block_size: int = 200,
     ):
         super().__init__()
 
@@ -82,6 +84,12 @@ class DrawPokerEnv(AECEnv):
         self.fixed_opponent_id = opponent_id  # None = random each episode
         self.rolling_window = rolling_window
         self.render_mode = render_mode
+        self.opponent_schedule = opponent_schedule  # "random" or "block"
+        self.block_size = block_size
+
+        # Block scheduling state
+        self._block_hand_count = 0
+        self._block_current_opp_id = 0
 
         self.rng = np.random.default_rng(rng_seed)
         self.deck = Deck(rng=self.rng)
@@ -105,6 +113,11 @@ class DrawPokerEnv(AECEnv):
         self.folded: Dict[str, bool] = {}
         self.draw_counts: Dict[str, int] = {}  # cards drawn this hand
         self.current_opponent: Optional[Opponent] = None
+
+        # Tracking for new strategic features
+        self.raises_this_hand: Dict[str, int] = {a: 0 for a in self.possible_agents}
+        self.raised_pre_draw: Dict[str, bool] = {a: False for a in self.possible_agents}
+        self.opp_bet_this_round: bool = False
 
         # Rewards accumulated
         self.rewards = {a: 0 for a in self.possible_agents}
@@ -139,10 +152,11 @@ class DrawPokerEnv(AECEnv):
         self._opp_post_draw_action = A_CALL
 
     def _compute_obs_size(self) -> int:
-        # 5 (hand) + 1 (hand_score) + 1 (pot) + 1 (bet_to_call) + 3 (phase) + 1 (opp_draw)
-        base = 12
+        # 10 (cards: rank+suit) + 1 (category) + 1 (score) + 1 (pot) + 1 (bet_to_call) + 3 (phase) + 1 (opp_draw)
+        # + 1 (position) + 1 (raises) + 1 (opp_aggression) + 1 (opp_raised_pre_draw) = 22
+        base = 22
         if self.use_implicit_modeling:
-            base += 6   # 6 rolling stats
+            base += 10   # 10 rolling stats
         else:
             base += NUM_ARCHETYPES  # 3 one-hot
         return base
@@ -175,6 +189,13 @@ class DrawPokerEnv(AECEnv):
         # Select opponent
         if self.fixed_opponent_id is not None:
             self.current_opponent = make_opponent(self.fixed_opponent_id, rng=self.rng)
+        elif self.opponent_schedule == "block":
+            # Block scheduling: keep the same opponent for block_size hands
+            if self._block_hand_count >= self.block_size:
+                self._block_hand_count = 0
+                self._block_current_opp_id = (self._block_current_opp_id + 1) % NUM_ARCHETYPES
+            self.current_opponent = make_opponent(self._block_current_opp_id, rng=self.rng)
+            self._block_hand_count += 1
         else:
             self.current_opponent = make_random_opponent(self.rng)
 
@@ -200,6 +221,9 @@ class DrawPokerEnv(AECEnv):
         self.draw_counts = {a: 0 for a in self.possible_agents}
         self._draw_acted = {a: False for a in self.possible_agents}
         self._opp_post_draw_action = A_CALL
+        self.raises_this_hand = {a: 0 for a in self.possible_agents}
+        self.raised_pre_draw = {a: False for a in self.possible_agents}
+        self.opp_bet_this_round = False
 
         # Agents
         self.agents = list(self.possible_agents)
@@ -344,13 +368,19 @@ class DrawPokerEnv(AECEnv):
                 self._bet_to_call[agent] = 0
                 self._bet_to_call[other] += bet_size
                 self.raises_left -= 1
+                self.raises_this_hand[agent] += 1
+                if self.phase == PHASE_PRE_DRAW:
+                    self.raised_pre_draw[agent] = True
                 # After a raise, the opponent needs to act again,
                 # so we reset the action count to 1 (only raiser has acted)
                 self._actions_this_round = 1
 
-        # Track opponent post-draw action
-        if agent == "player_1" and self.phase == PHASE_POST_DRAW:
-            self._opp_post_draw_action = action
+        # Track opponent post-draw action and aggression
+        if agent == "player_1":
+            if self.phase == PHASE_POST_DRAW:
+                self._opp_post_draw_action = action
+            if action == A_RAISE or (action == A_CALL and self._bet_to_call["player_1"] > 0):
+                self.opp_bet_this_round = True
 
     def _process_draw_action(self, agent: str, action: int):
         """Handle a draw-phase action (discard bitmask)."""
@@ -397,6 +427,7 @@ class DrawPokerEnv(AECEnv):
         self.raises_left = MAX_RAISES
         self._bet_to_call = {a: 0 for a in self.possible_agents}
         self._actions_this_round = 0
+        self.opp_bet_this_round = False
         self._current_bettor_idx = 0
         self.agent_selection = self._betting_order[0]
 
@@ -471,10 +502,14 @@ class DrawPokerEnv(AECEnv):
     def _build_observation(self, agent: str) -> np.ndarray:
         """Build the observation vector for the given agent."""
         hand = self.hands.get(agent, [0, 0, 0, 0, 0])
-        hand_norm = [normalize_card(c) for c in hand]
+        hand_norm = []
+        for c in hand:
+            hand_norm.extend([normalize_rank(c), normalize_suit(c)])
 
         hand_score = evaluate_hand(hand) if len(hand) == 5 else 0
+        hand_category_val = hand_category(hand) if len(hand) == 5 else 0
         hand_score_norm = normalize_hand_score(hand_score)
+        hand_category_norm = hand_category_val / 8.0
 
         pot_norm = min(self.pot / 50.0, 1.0)
         btc_norm = min(self._bet_to_call.get(agent, 0) / 20.0, 1.0)
@@ -488,11 +523,20 @@ class DrawPokerEnv(AECEnv):
         elif self.phase == PHASE_POST_DRAW:
             phase_vec[2] = 1.0
 
-        # Opponent's draw count from current hand (0 if draw hasn't happened)
+        # Opponent's draw count from current hand (-1.0 if draw hasn't happened)
         other = "player_1" if agent == "player_0" else "player_0"
-        opp_draw = self.draw_counts.get(other, 0) / 5.0
+        if self._draw_acted[other]:
+            opp_draw = self.draw_counts.get(other, 0) / 5.0
+        else:
+            opp_draw = -1.0
 
-        obs = hand_norm + [hand_score_norm, pot_norm, btc_norm] + phase_vec + [opp_draw]
+        # Strategic features
+        position = 1.0 if self._betting_order[0] == agent else 0.0
+        raises = min(self.raises_this_hand.get(agent, 0) / 4.0, 1.0)
+        opp_aggression = 1.0 if (agent == "player_0" and self.opp_bet_this_round) else 0.0
+        opp_raised_pre = 1.0 if self.raised_pre_draw.get(other, False) else 0.0
+
+        obs = hand_norm + [hand_category_norm, hand_score_norm, pot_norm, btc_norm] + phase_vec + [opp_draw, position, raises, opp_aggression, opp_raised_pre]
 
         if self.use_implicit_modeling:
             stats = self._get_rolling_stats()
@@ -532,8 +576,11 @@ class DrawPokerEnv(AECEnv):
         entry = {
             "draw_count": self.draw_counts.get("player_1", 0),
             "folded": self.folded.get("player_1", False),
+            "phase_when_folded": self.phase if self.folded.get("player_1", False) else None,
             "post_draw_action": self._opp_post_draw_action,
             "opponent_id": self.current_opponent.opponent_id if self.current_opponent else -1,
+            "vpip": self.total_invested.get("player_1", 0) > ANTE,
+            "pfr": self.raised_pre_draw.get("player_1", False),
         }
         self._opp_history.append(entry)
         # Trim to rolling window
@@ -543,19 +590,24 @@ class DrawPokerEnv(AECEnv):
     def _get_rolling_stats(self) -> List[float]:
         """Compute rolling statistics over the last N opponent hands.
 
-        Returns 6 floats:
-            0: Frequency of folding post-draw
-            1: Frequency of raising post-draw
-            2: Average cards drawn (normalised to 0‑1)
-            3: Frequency of raising, then standing pat (draw 0)
-            4: Frequency of folding after drawing 3 cards
-            5: Frequency of raising after standing pat
+        Returns 10 floats:
+            0: Frequency of folding PRE-draw
+            1: Frequency of folding POST-draw
+            2: Frequency of raising post-draw
+            3: Average cards drawn (normalised to 0‑1)
+            4: Frequency of raising, then standing pat (draw 0)
+            5: Frequency of folding after drawing 3 cards
+            6: Frequency of raising after standing pat
+            7: VPIP (Voluntary Put In Pot %)
+            8: PFR (Pre-Flop Raise %)
+            9: Aggression Factor (Raises / Calls)
         """
         if not self._opp_history:
-            return [0.5, 0.5, 0.5, 0.0, 0.0, 0.0]
+            return [0.5, 0.5, 0.5, 0.5, 0.0, 0.0, 0.0, 0.5, 0.1, 0.5]
 
         n = len(self._opp_history)
-        fold_post = sum(1 for h in self._opp_history if h["folded"]) / n
+        fold_pre = sum(1 for h in self._opp_history if h["phase_when_folded"] == PHASE_PRE_DRAW) / n
+        fold_post = sum(1 for h in self._opp_history if h["phase_when_folded"] in (PHASE_DRAW, PHASE_POST_DRAW, PHASE_SHOWDOWN)) / n
         raise_post = sum(
             1 for h in self._opp_history if h.get("post_draw_action") == A_RAISE
         ) / n
@@ -580,7 +632,15 @@ class DrawPokerEnv(AECEnv):
             / max(1, len(standpat_hands))
         )
 
-        return [fold_post, raise_post, avg_draw, raise_standpat, fold_after_draw3, raise_after_standpat]
+        vpip = sum(1 for h in self._opp_history if h.get("vpip", False)) / n
+        pfr = sum(1 for h in self._opp_history if h.get("pfr", False)) / n
+
+        # Aggression factor roughly = raises / calls
+        total_raises = sum(1 for h in self._opp_history if h.get("post_draw_action") == A_RAISE)
+        total_calls = sum(1 for h in self._opp_history if h.get("post_draw_action") == A_CALL)
+        af = min(total_raises / max(1, total_calls) / 3.0, 1.0) # normalize to 0-1 range
+
+        return [fold_pre, fold_post, raise_post, avg_draw, raise_standpat, fold_after_draw3, raise_after_standpat, vpip, pfr, af]
 
     # -----------------------------------------------------------------------
     # Rendering

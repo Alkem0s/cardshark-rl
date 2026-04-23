@@ -1,5 +1,6 @@
 """smoke_test.py — Quick sanity check for the CardShark-RL codebase."""
 import sys
+import os
 
 print("=== CardShark-RL Smoke Test ===\n")
 
@@ -57,14 +58,39 @@ for ep in range(200):
 assert errors == 0, f"{errors}/200 episodes did not terminate"
 print("OK")
 
-# 5. Implicit modeling obs size
-print("[5/5] Testing implicit vs explicit obs sizes...", end=" ", flush=True)
+# 5. Implicit modeling obs size + obs bounds
+print("[5/7] Testing implicit vs explicit obs sizes...", end=" ", flush=True)
 env_a = DrawPokerGymEnv(use_implicit_modeling=False, rng_seed=1)
 env_b = DrawPokerGymEnv(use_implicit_modeling=True,  rng_seed=1)
 obs_a, _ = env_a.reset()
 obs_b, _ = env_b.reset()
-assert obs_a.shape == (15,), f"Model A obs should be (15,), got {obs_a.shape}"
-assert obs_b.shape == (18,), f"Model B obs should be (18,), got {obs_b.shape}"
+assert obs_a.shape == (25,), f"Model A obs should be (25,), got {obs_a.shape}"
+assert obs_b.shape == (32,), f"Model B obs should be (32,), got {obs_b.shape}"
+assert env_a.observation_space.low[0] == -1.0, f"Obs low should be -1.0, got {env_a.observation_space.low[0]}"
+print("OK")
+
+# 6. Block scheduling
+print("[6/7] Testing block opponent scheduling...", end=" ", flush=True)
+env_block = DrawPokerGymEnv(
+    use_implicit_modeling=True, rng_seed=2,
+    opponent_schedule="block", block_size=5,
+)
+opps_seen = []
+for _ in range(12):
+    env_block.reset()
+    opps_seen.append(env_block._env.current_opponent.name)
+# First 5 should be same, then switch
+assert opps_seen[0] == opps_seen[4], f"Block should keep same opp for block_size hands"
+assert opps_seen[4] != opps_seen[5], f"Block should rotate after block_size hands"
+print("OK")
+
+# 7. Timestamped results dir
+print("[7/7] Testing timestamped run directory...", end=" ", flush=True)
+from main import make_run_dir
+import shutil
+test_dir = make_run_dir("_smoke_test_results")
+assert os.path.isdir(test_dir), f"Run dir not created: {test_dir}"
+shutil.rmtree("_smoke_test_results")
 print("OK")
 
 print("\n=== ALL TESTS PASSED ===")

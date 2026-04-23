@@ -268,9 +268,13 @@ def has_straight_draw(cards: List[int]) -> Tuple[bool, List[int]]:
 
 MAX_HAND_SCORE = evaluate_hand([8, 21, 34, 47, 12])  # Royal flush approx upper bound
 
-def normalize_card(card: int) -> float:
-    """Normalise card integer to [0, 1]."""
-    return card / 51.0
+def normalize_rank(card: int) -> float:
+    """Normalise card rank to [0, 1]."""
+    return rank_of(card) / 12.0
+
+def normalize_suit(card: int) -> float:
+    """Normalise card suit to [0, 1]."""
+    return suit_of(card) / 3.0
 
 def normalize_hand_score(score: int) -> float:
     """Normalise hand score to approx [0, 1]."""

@@ -1,0 +1,18 @@
+{
+  "best_value": 20.41999999999981,
+  "params": {
+    "learning_rate": 0.00034390169755107655,
+    "n_steps": 1024,
+    "batch_size": 64,
+    "n_epochs": 8,
+    "gamma": 0.9689549953266641,
+    "ent_coef": 0.007899154453136631,
+    "rolling_window": 50,
+    "block_size": 400,
+    "net_arch": [
+      256,
+      256,
+      256
+    ]
+  }
+}

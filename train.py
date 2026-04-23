@@ -62,12 +62,16 @@ def train_model(
     seed: int = 42,
     net_arch: list[int] | None = None,
     learning_rate: float = 3e-4,
-    n_steps: int = 2048,
-    batch_size: int = 256,
+    n_steps: int = 1024,
+    batch_size: int = 128,
     n_epochs: int = 10,
-    gamma: float = 0.99,
+    gamma: float = 1.0,
+    ent_coef: float = 0.01,
     device: str = "auto",
     verbose: int = 1,
+    rolling_window: int | None = None,
+    opponent_schedule: str | None = None,
+    block_size: int = 200,
 ) -> tuple[MaskablePPO, RewardTrackingCallback]:
     """Train a MaskablePPO model on the Draw Poker environment.
 
@@ -85,6 +89,7 @@ def train_model(
         batch_size: Minibatch size.
         n_epochs: PPO epochs per update.
         gamma: Discount factor.
+        ent_coef: Entropy coefficient.
         device: 'auto', 'cpu', or 'cuda'.
         verbose: Verbosity level.
 
@@ -92,7 +97,13 @@ def train_model(
         Tuple of (trained model, reward callback).
     """
     if net_arch is None:
-        net_arch = [256, 256]
+        net_arch = [256, 256, 128]
+
+    # Defaults: block scheduling for implicit, random for explicit
+    if rolling_window is None:
+        rolling_window = 100 if use_implicit else 50
+    if opponent_schedule is None:
+        opponent_schedule = "block" if use_implicit else "random"
 
     os.makedirs(save_dir, exist_ok=True)
     os.makedirs(log_dir, exist_ok=True)
@@ -109,8 +120,10 @@ def train_model(
     env = DrawPokerGymEnv(
         use_implicit_modeling=use_implicit,
         opponent_id=None,  # Random opponent each episode
-        rolling_window=50,
+        rolling_window=rolling_window,
         rng_seed=seed,
+        opponent_schedule=opponent_schedule,
+        block_size=block_size,
     )
 
     # Wrap with ActionMasker first so mask_fn has direct access to DrawPokerGymEnv
@@ -138,6 +151,7 @@ def train_model(
         batch_size=batch_size,
         n_epochs=n_epochs,
         gamma=gamma,
+        ent_coef=ent_coef,
         verbose=verbose,
         seed=seed,
         device=device,
@@ -183,8 +197,11 @@ def train_both_models(
     log_dir: str = "logs",
     seed: int = 42,
     device: str = "auto",
+    **kwargs,
 ) -> dict:
     """Train both Model A (Explicit) and Model B (Implicit).
+
+    Additional kwargs are passed through to train_model (e.g., HPO params).
 
     Returns dict with keys 'model_a', 'model_b', 'callback_a', 'callback_b'.
     """
@@ -199,6 +216,7 @@ def train_both_models(
         log_dir=log_dir,
         seed=seed,
         device=device,
+        **kwargs,
     )
     results["model_a"] = model_a
     results["callback_a"] = cb_a
@@ -212,6 +230,7 @@ def train_both_models(
         log_dir=log_dir,
         seed=seed + 1,  # Different seed for variety
         device=device,
+        **kwargs,
     )
     results["model_b"] = model_b
     results["callback_b"] = cb_b
