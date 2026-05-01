@@ -182,50 +182,85 @@ def full_evaluation(
     num_hands: int = 10_000,
     seed: int = 0,
     results_dir: str = "results",
+    eval_seeds: list[int] | None = None,
 ) -> dict:
-    """Run full cross-evaluation tournament.
+    """Run full cross-evaluation tournament, optionally over multiple seeds.
 
-    Pits Model A, Model B, and Random against all 3 archetypes.
-    Returns comprehensive results dict.
+    When eval_seeds is provided (e.g. [0, 1, 2]), the tournament is run once
+    per seed and the results are aggregated to give mean ± std BB/100,
+    providing confidence intervals around each matchup score.
+
+    Args:
+        eval_seeds: List of RNG seeds to evaluate. Defaults to [seed].
+
+    Returns:
+        Results dict. Each entry has 'bb_per_100' (mean across seeds)
+        and optionally 'bb_per_100_std', 'bb_per_100_all' (per-seed list).
     """
     os.makedirs(results_dir, exist_ok=True)
 
-    results = {
-        "model_a": {},
-        "model_b": {},
-        "random": {},
-    }
+    if eval_seeds is None:
+        eval_seeds = [seed]
 
+    n_seeds = len(eval_seeds)
     print(f"\n{'='*60}")
-    print(f"  CROSS-EVALUATION TOURNAMENT ({num_hands:,} hands each)")
+    print(f"  CROSS-EVALUATION TOURNAMENT ({num_hands:,} hands × {n_seeds} seed(s))")
+    print(f"  Seeds: {eval_seeds}")
     print(f"{'='*60}")
 
-    for opp_id, opp_name in enumerate(OPP_NAMES):
-        print(f"\n  vs {opp_name}:")
+    # Accumulate per-seed results
+    # Structure: raw[model_key][opp_name] = list of single-seed result dicts
+    raw: dict[str, dict[str, list]] = {
+        "model_a": {n: [] for n in OPP_NAMES},
+        "model_b": {n: [] for n in OPP_NAMES},
+        "random":  {n: [] for n in OPP_NAMES},
+    }
 
-        # Model A (Explicit)
-        res_a = run_tournament(
-            model_a, use_implicit=False, opponent_id=opp_id,
-            num_hands=num_hands, seed=seed,
-        )
-        results["model_a"][opp_name] = res_a
-        print(f"    Model A (Explicit):  {res_a['bb_per_100']:+8.2f} BB/100")
+    for s_idx, s in enumerate(eval_seeds):
+        print(f"\n  --- Seed {s} ({s_idx+1}/{n_seeds}) ---")
+        for opp_id, opp_name in enumerate(OPP_NAMES):
+            print(f"  vs {opp_name}:")
 
-        # Model B (Implicit) — collect behavioral data
-        res_b = run_tournament(
-            model_b, use_implicit=True, opponent_id=opp_id,
-            num_hands=num_hands, seed=seed,
-            collect_behavioral=True,
-        )
-        results["model_b"][opp_name] = res_b
-        print(f"    Model B (Implicit):  {res_b['bb_per_100']:+8.2f} BB/100")
+            res_a = run_tournament(
+                model_a, use_implicit=False, opponent_id=opp_id,
+                num_hands=num_hands, seed=s,
+            )
+            raw["model_a"][opp_name].append(res_a)
+            print(f"    Model A (Explicit):  {res_a['bb_per_100']:+8.2f} BB/100")
 
-        # Random baseline
-        res_r = run_random_baseline(
-            opponent_id=opp_id, num_hands=num_hands, seed=seed,
-        )
-        results["random"][opp_name] = res_r
-        print(f"    Random Baseline:     {res_r['bb_per_100']:+8.2f} BB/100")
+            res_b = run_tournament(
+                model_b, use_implicit=True, opponent_id=opp_id,
+                num_hands=num_hands, seed=s,
+                collect_behavioral=(s_idx == 0),  # collect behavioral on first seed only
+            )
+            raw["model_b"][opp_name].append(res_b)
+            print(f"    Model B (Implicit):  {res_b['bb_per_100']:+8.2f} BB/100")
+
+            res_r = run_random_baseline(
+                opponent_id=opp_id, num_hands=num_hands, seed=s,
+            )
+            raw["random"][opp_name].append(res_r)
+            print(f"    Random Baseline:     {res_r['bb_per_100']:+8.2f} BB/100")
+
+    # Aggregate: compute mean ± std across seeds
+    results: dict[str, dict] = {"model_a": {}, "model_b": {}, "random": {}}
+
+    for model_key in results:
+        for opp_name in OPP_NAMES:
+            seed_results = raw[model_key][opp_name]
+            bbs = [r["bb_per_100"] for r in seed_results]
+            # Use first-seed hand_profits for plots (representative)
+            results[model_key][opp_name] = {
+                "bb_per_100":      float(np.mean(bbs)),
+                "bb_per_100_std":  float(np.std(bbs)) if n_seeds > 1 else 0.0,
+                "bb_per_100_all":  bbs,
+                "hand_profits":    seed_results[0]["hand_profits"],
+            }
+            # Preserve behavioral data from first seed for Model B
+            if model_key == "model_b" and "post_draw_actions" in seed_results[0]:
+                results[model_key][opp_name]["post_draw_actions"] = (
+                    seed_results[0]["post_draw_actions"]
+                )
 
     print(f"\n{'='*60}\n")
     return results
@@ -493,33 +528,33 @@ def plot_cumulative_profit(
 # ---------------------------------------------------------------------------
 
 def print_summary_table(results: dict):
-    """Print a clean summary table of BB/100 results."""
-    print(f"\n{'='*60}")
+    """Print a clean summary table of BB/100 results, with ±std if available."""
+    print(f"\n{'='*70}")
     print(f"  FINAL RESULTS -- BB/100 (Big Blinds per 100 Hands)")
-    print(f"{'='*60}")
-    print(f"\n  {'Opponent':<18} {'Model A':>10} {'Model B':>10} {'Random':>10}")
-    print(f"  {'-'*50}")
+    print(f"{'='*70}")
+    print(f"\n  {'Opponent':<18} {'Model A':>14} {'Model B':>14} {'Random':>14}")
+    print(f"  {'-'*62}")
+
+    def _fmt(res_entry: dict) -> str:
+        bb = res_entry["bb_per_100"]
+        std = res_entry.get("bb_per_100_std", 0.0)
+        n_seeds = len(res_entry.get("bb_per_100_all", [1]))
+        if n_seeds > 1:
+            return f"{bb:>+7.1f}±{std:.1f}"
+        return f"{bb:>+9.2f}    "
 
     for opp_name in OPP_NAMES:
-        bb_a = results["model_a"][opp_name]["bb_per_100"]
-        bb_b = results["model_b"][opp_name]["bb_per_100"]
-        bb_r = results["random"][opp_name]["bb_per_100"]
-        print(
-            f"  {opp_name:<18} "
-            f"{bb_a:>+9.2f}  "
-            f"{bb_b:>+9.2f}  "
-            f"{bb_r:>+9.2f}"
-        )
+        fa = _fmt(results["model_a"][opp_name])
+        fb = _fmt(results["model_b"][opp_name])
+        fr = _fmt(results["random"][opp_name])
+        print(f"  {opp_name:<18} {fa:>14} {fb:>14} {fr:>14}")
 
     # Averages
     avg_a = np.mean([results["model_a"][n]["bb_per_100"] for n in OPP_NAMES])
     avg_b = np.mean([results["model_b"][n]["bb_per_100"] for n in OPP_NAMES])
     avg_r = np.mean([results["random"][n]["bb_per_100"] for n in OPP_NAMES])
-    print(f"  {'-'*50}")
+    print(f"  {'-'*62}")
     print(
-        f"  {'AVERAGE':<18} "
-        f"{avg_a:>+9.2f}  "
-        f"{avg_b:>+9.2f}  "
-        f"{avg_r:>+9.2f}"
+        f"  {'AVERAGE':<18} {avg_a:>+9.2f}      {avg_b:>+9.2f}      {avg_r:>+9.2f}"
     )
-    print(f"\n{'='*60}\n")
+    print(f"\n{'='*70}\n")

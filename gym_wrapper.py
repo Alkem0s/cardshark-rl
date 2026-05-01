@@ -44,6 +44,10 @@ class DrawPokerGymEnv(gym.Env):
         rng_seed: int | None = None,
         opponent_schedule: str = "random",
         block_size: int = 200,
+        hybrid_switch_episodes: int | None = None,
+        # Reward shaping — tunable via HPO
+        fold_penalty: float = 0.3,
+        steal_bonus: float = 0.2,
     ):
         super().__init__()
 
@@ -51,6 +55,8 @@ class DrawPokerGymEnv(gym.Env):
         self.opponent_id = opponent_id
         self.rolling_window = rolling_window
         self.render_mode = render_mode
+        self.fold_penalty = fold_penalty
+        self.steal_bonus = steal_bonus
 
         # Create the inner AEC env
         self._env = DrawPokerEnv(
@@ -61,6 +67,7 @@ class DrawPokerGymEnv(gym.Env):
             rng_seed=rng_seed,
             opponent_schedule=opponent_schedule,
             block_size=block_size,
+            hybrid_switch_episodes=hybrid_switch_episodes,
         )
 
         # Determine obs size
@@ -134,14 +141,14 @@ class DrawPokerGymEnv(gym.Env):
         reward = self._env.rewards.get("player_0", 0) + self._pending_reward
         self._pending_reward = 0.0
 
-        # Reward shaping
+        # Reward shaping (weights are HPO-tunable)
         if not terminated and action == A_FOLD and self._env._bet_to_call.get("player_0", 0) == 0:
             # Penalty for folding when checking was an option
-            reward -= 0.3
+            reward -= self.fold_penalty
 
         # Steal-attempt bonus: if agent raised and opponent folded, reward the steal
         if terminated and action == A_RAISE and self._env.folded.get("player_1", False):
-            reward += 0.2
+            reward += self.steal_bonus
 
         self.episode_reward += reward
         self.episode_length += 1
@@ -208,14 +215,24 @@ def make_env(
     opponent_id: int | None = None,
     rolling_window: int = 50,
     seed: int = 0,
+    opponent_schedule: str = "random",
+    block_size: int = 200,
+    hybrid_switch_episodes: int | None = None,
+    fold_penalty: float = 0.3,
+    steal_bonus: float = 0.2,
 ):
-    """Create a closure that returns a DrawPokerGymEnv."""
+    """Create a closure that returns a DrawPokerGymEnv (for DummyVecEnv / SubprocVecEnv)."""
     def _init():
         env = DrawPokerGymEnv(
             use_implicit_modeling=use_implicit,
             opponent_id=opponent_id,
             rolling_window=rolling_window,
             rng_seed=seed,
+            opponent_schedule=opponent_schedule,
+            block_size=block_size,
+            hybrid_switch_episodes=hybrid_switch_episodes,
+            fold_penalty=fold_penalty,
+            steal_bonus=steal_bonus,
         )
         return env
     return _init

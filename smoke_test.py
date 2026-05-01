@@ -64,8 +64,8 @@ env_a = DrawPokerGymEnv(use_implicit_modeling=False, rng_seed=1)
 env_b = DrawPokerGymEnv(use_implicit_modeling=True,  rng_seed=1)
 obs_a, _ = env_a.reset()
 obs_b, _ = env_b.reset()
-assert obs_a.shape == (25,), f"Model A obs should be (25,), got {obs_a.shape}"
-assert obs_b.shape == (32,), f"Model B obs should be (32,), got {obs_b.shape}"
+assert obs_a.shape == (26,), f"Model A obs should be (26,), got {obs_a.shape}"
+assert obs_b.shape == (33,), f"Model B obs should be (33,), got {obs_b.shape}"
 assert env_a.observation_space.low[0] == -1.0, f"Obs low should be -1.0, got {env_a.observation_space.low[0]}"
 print("OK")
 

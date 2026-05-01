@@ -77,6 +77,7 @@ class DrawPokerEnv(AECEnv):
         rng_seed: int | None = None,
         opponent_schedule: str = "random",
         block_size: int = 200,
+        hybrid_switch_episodes: int | None = None,
     ):
         super().__init__()
 
@@ -84,11 +85,13 @@ class DrawPokerEnv(AECEnv):
         self.fixed_opponent_id = opponent_id  # None = random each episode
         self.rolling_window = rolling_window
         self.render_mode = render_mode
-        self.opponent_schedule = opponent_schedule  # "random" or "block"
+        self.opponent_schedule = opponent_schedule  # "random", "block", or "hybrid"
         self.block_size = block_size
+        self.hybrid_switch_episodes = hybrid_switch_episodes
 
-        # Block scheduling state
+        # Block / hybrid scheduling state
         self._block_hand_count = 0
+        self._total_episodes = 0
         self._block_current_opp_id = 0
 
         self.rng = np.random.default_rng(rng_seed)
@@ -152,9 +155,10 @@ class DrawPokerEnv(AECEnv):
         self._opp_post_draw_action = A_CALL
 
     def _compute_obs_size(self) -> int:
-        # 10 (cards: rank+suit) + 1 (category) + 1 (score) + 1 (pot) + 1 (bet_to_call) + 3 (phase) + 1 (opp_draw)
-        # + 1 (position) + 1 (raises) + 1 (opp_aggression) + 1 (opp_raised_pre_draw) = 22
-        base = 22
+        # 10 (cards: rank+suit) + 1 (category) + 1 (score) + 1 (pot) + 1 (bet_to_call)
+        # + 1 (pot_odds) + 3 (phase) + 1 (opp_draw)
+        # + 1 (position) + 1 (raises) + 1 (opp_aggression) + 1 (opp_raised_pre_draw) = 23
+        base = 23
         if self.use_implicit_modeling:
             base += 10   # 10 rolling stats
         else:
@@ -186,10 +190,18 @@ class DrawPokerEnv(AECEnv):
             self.rng = np.random.default_rng(seed)
             self.deck = Deck(rng=self.rng)
 
+        self._total_episodes += 1
+
+        # Determine effective schedule for this episode
+        if self.opponent_schedule == "hybrid" and self.hybrid_switch_episodes:
+            effective_schedule = "block" if self._total_episodes <= self.hybrid_switch_episodes else "random"
+        else:
+            effective_schedule = self.opponent_schedule
+
         # Select opponent
         if self.fixed_opponent_id is not None:
             self.current_opponent = make_opponent(self.fixed_opponent_id, rng=self.rng)
-        elif self.opponent_schedule == "block":
+        elif effective_schedule == "block":
             # Block scheduling: keep the same opponent for block_size hands
             if self._block_hand_count >= self.block_size:
                 self._block_hand_count = 0
@@ -514,6 +526,10 @@ class DrawPokerEnv(AECEnv):
         pot_norm = min(self.pot / 50.0, 1.0)
         btc_norm = min(self._bet_to_call.get(agent, 0) / 20.0, 1.0)
 
+        # Pot odds: ratio of bet-to-call vs pot size (what a human player would consider)
+        btc_raw = self._bet_to_call.get(agent, 0)
+        pot_odds = min(btc_raw / max(1, self.pot), 1.0)
+
         # Phase one-hot
         phase_vec = [0.0, 0.0, 0.0]
         if self.phase == PHASE_PRE_DRAW:
@@ -536,7 +552,7 @@ class DrawPokerEnv(AECEnv):
         opp_aggression = 1.0 if (agent == "player_0" and self.opp_bet_this_round) else 0.0
         opp_raised_pre = 1.0 if self.raised_pre_draw.get(other, False) else 0.0
 
-        obs = hand_norm + [hand_category_norm, hand_score_norm, pot_norm, btc_norm] + phase_vec + [opp_draw, position, raises, opp_aggression, opp_raised_pre]
+        obs = hand_norm + [hand_category_norm, hand_score_norm, pot_norm, btc_norm, pot_odds] + phase_vec + [opp_draw, position, raises, opp_aggression, opp_raised_pre]
 
         if self.use_implicit_modeling:
             stats = self._get_rolling_stats()

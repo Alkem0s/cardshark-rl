@@ -14,5 +14,31 @@
       256,
       256
     ]
+  },
+  "model_b": {
+    "params": {
+      "learning_rate": 0.00010452179431207683,
+      "n_steps": 2048,
+      "batch_size": 32,
+      "n_epochs": 23,
+      "gamma": 0.9830643450606115,
+      "ent_coef": 0.004155011978339657,
+      "clip_range": 0.13414755881676388,
+      "gae_lambda": 0.9019504766995199,
+      "vf_coef": 0.7069089144291878,
+      "max_grad_norm": 0.7570815408014495,
+      "fold_penalty": 0.29648792132064533,
+      "steal_bonus": 0.44814446620780085,
+      "lr_schedule": "linear",
+      "rolling_window": 10,
+      "block_size": 100,
+      "net_arch": [
+        256,
+        256,
+        256,
+        256
+      ],
+      "hybrid_switch_episodes": 100000
+    }
   }
 }
