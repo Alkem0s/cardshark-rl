@@ -295,9 +295,14 @@ def main():
     from evaluate import (
         full_evaluation, compute_behavioral_matrix,
         print_behavioral_matrix, print_summary_table,
+    )
+    from visualizer import (
+        set_style, plot_architecture,
         plot_bb_comparison, plot_learning_curves,
         plot_behavioral_heatmap, plot_cumulative_profit,
     )
+
+    set_style()
 
     n_seeds = len(args.eval_seeds)
     print(f"\n  Running evaluation ({args.eval_hands:,} hands × {n_seeds} seeds)...\n")
@@ -340,6 +345,10 @@ def main():
     plot_cumulative_profit(
         eval_results,
         save_path=os.path.join(run_dir, "cumulative_profit.png"),
+    )
+
+    plot_architecture(
+        save_path=os.path.join(run_dir, "architecture.png"),
     )
 
     # Save per-opponent training eval history if available
