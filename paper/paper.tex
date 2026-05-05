@@ -1,0 +1,567 @@
+% =====================================================================
+% CardShark-RL — IEEE Two-Column Paper
+% CENG 454 Final Project Report
+% =====================================================================
+\documentclass[conference]{IEEEtran}
+
+\IEEEoverridecommandlockouts
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{multirow}
+\usepackage{array}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+% =====================================================================
+\begin{document}
+
+\title{Decoding ``The Tell'': Exploitative Reinforcement Learning\\
+and Implicit Opponent Modeling in 5-Card Draw Poker}
+
+\author{
+  \IEEEauthorblockN{[Author Names]}
+  \IEEEauthorblockA{
+    \textit{Department of Computer Engineering}\\
+    \textit{Izmir Katip Celebi University}\\
+    Izmir, Turkey
+  }
+}
+
+\maketitle
+
+% =====================================================================
+\begin{abstract}
+Poker is a canonical benchmark for artificial intelligence research in
+imperfect-information games, requiring agents to reason under
+uncertainty, manage hidden state, and adapt strategy to diverse
+opponents. This paper presents \textbf{CardShark-RL}, a reinforcement
+learning system for heads-up limit 5-Card Draw Poker that investigates
+two complementary approaches to opponent adaptation: (A) explicit
+opponent modeling, in which a one-hot identifier encodes the opponent
+archetype directly in the observation, and (B) implicit opponent
+modeling, in which the agent infers opponent behavior from a rolling
+window of behavioral statistics. Both agents are trained using
+MaskablePPO \cite{raffin2021stable} within a custom PettingZoo
+\cite{terry2021pettingzoo} environment. We further apply Optuna-based
+hyperparameter optimization \cite{akiba2019optuna} and reward shaping
+to improve convergence. The two models are evaluated against three
+hand-crafted opponent archetypes---Calling Station, Maniac, and
+Rock---over 10,000 hands each. We analyze ``The Tell'': the behavioral
+signature that Model~B learns to exploit based solely on an opponent's
+draw-count pattern, without access to any explicit opponent identity.
+Our results demonstrate that implicit behavioral inference is a
+principled and competitive approach to opponent exploitation in
+imperfect-information poker games.
+\end{abstract}
+
+\begin{IEEEkeywords}
+reinforcement learning, opponent modeling, poker AI, MaskablePPO,
+imperfect-information games, reward shaping, behavioral inference,
+hyperparameter optimization
+\end{IEEEkeywords}
+
+% =====================================================================
+\section{Introduction and Motivation}
+\label{sec:intro}
+
+Poker has long served as a proving ground for AI research on
+decision-making under uncertainty. Unlike chess or Go, poker involves
+hidden information---players observe only their own cards and the
+shared betting history---creating a setting where an optimal strategy
+must reason about the probability distributions over unobserved states
+and simultaneously adapt to the behavioral tendencies of the opponent.
+This combination of imperfect information, sequential decision-making,
+and strategic adaptation makes poker a rich and challenging domain for
+reinforcement learning (RL).
+
+Landmark systems such as Libratus \cite{brown2018libratus}, DeepStack
+\cite{moravcik2017deepstack}, and Pluribus \cite{brown2019superhuman}
+have achieved superhuman performance in Texas Hold'em by combining
+Counterfactual Regret Minimization (CFR) \cite{zinkevich2007regret}
+with sophisticated endgame solving. While these systems represent the
+state of the art in game-theoretically optimal play, they are
+computationally expensive, require large-scale game-tree traversal,
+and are primarily designed to resist exploitation rather than to
+actively exploit opponent weaknesses.
+
+In contrast, this work investigates \textit{exploitative} RL:
+training a deep policy network to identify and profit from specific,
+predictable patterns in opponent behavior. We focus on 5-Card Draw
+Poker, a historically significant variant that has received less
+attention in the modern deep learning era, and we formulate a concrete
+research question: \textit{Can a reinforcement learning agent
+adaptively exploit behaviorally distinct opponents through implicit
+modeling alone, without access to explicit opponent identity
+information?}
+
+To answer this question, we design and implement \textbf{CardShark-RL},
+a complete RL training and evaluation pipeline featuring:
+\begin{itemize}
+    \item A custom PettingZoo AEC environment for limit heads-up
+    5-Card Draw Poker with three hard-coded opponent archetypes;
+    \item \textbf{Model~A} (Explicit): a MaskablePPO agent that
+    receives a one-hot encoding of the opponent archetype in its
+    observation vector;
+    \item \textbf{Model~B} (Implicit): a MaskablePPO agent that
+    receives only a rolling window of 10 behavioral statistics computed
+    from past hands, with no direct opponent identity signal;
+    \item Optuna-based hyperparameter optimization with a
+    Rock-weighted objective function;
+    \item Reward shaping to encourage aggressive exploitation;
+    \item A behavioral matrix analysis, ``The Tell'', that reveals
+    how Model~B adapts its post-draw betting strategy based on
+    opponent draw counts.
+\end{itemize}
+
+The remainder of this paper is organized as follows.
+Section~\ref{sec:related} reviews related work. Section~\ref{sec:env}
+describes the game environment and opponent archetypes.
+Section~\ref{sec:method} details the proposed methodology.
+Sections~\ref{sec:results}--\ref{sec:conclusion} present results,
+discussion, and conclusions (to be completed).
+
+% =====================================================================
+\section{Background and Related Work}
+\label{sec:related}
+
+\subsection{Game-Theoretic Poker AI}
+
+The challenge of building superhuman poker AI has driven decades of
+research. Early milestones include Polaris \cite{zinkevich2007regret},
+which applied CFR variants to limit Texas Hold'em. The breakthrough
+work of Libratus \cite{brown2018libratus} achieved superhuman
+performance in heads-up no-limit Texas Hold'em in 2017 using an
+endgame solver and safe subgame-refinement techniques \cite{ganzfried2015endgame}.
+DeepStack \cite{moravcik2017deepstack} concurrently demonstrated that
+deep neural networks could replace the look-up tables used in
+endgame solving, enabling real-time play without pre-computed
+strategies. Pluribus \cite{brown2019superhuman} subsequently extended
+this paradigm to six-player no-limit Hold'em, the first superhuman
+AI to master multiplayer poker. A key distinction of these systems is
+their focus on \textit{equilibrium strategies}---policies robust to
+any opponent---rather than \textit{exploitative} strategies that
+target specific opponent weaknesses.
+
+\subsection{Deep Reinforcement Learning in Games}
+
+Deep reinforcement learning has achieved remarkable results in a wide
+range of games. Mnih et al.~\cite{mnih2015human} demonstrated that
+DQN could achieve human-level performance on Atari games by combining
+Q-learning with deep convolutional networks, experience replay, and
+target networks. Silver et al.~\cite{silver2016mastering} applied
+deep RL and Monte Carlo tree search to master the game of Go, a
+domain previously thought intractable for AI. The Proximal Policy
+Optimization (PPO) algorithm \cite{schulman2017proximal}, introduced
+by Schulman et al., provides a stable and sample-efficient policy
+gradient method well-suited to discrete action environments such as
+card games. PPO's clipped surrogate objective prevents destructively
+large policy updates while remaining simpler to implement than its
+predecessor, TRPO. In our work, we use MaskablePPO, an extension of
+PPO from the sb3-contrib library \cite{raffin2021stable}, which
+incorporates action masking to handle the structured invalid-action
+spaces that arise in poker (betting during draw phases and vice versa).
+
+\subsection{Action Masking in Reinforcement Learning}
+
+Huang and Onta\~{n}{\'o}n~\cite{huang2022closer} provide a
+theoretical and empirical analysis of invalid action masking in policy
+gradient algorithms. They demonstrate that masking is critical when
+the ratio of invalid to valid actions is large, as penalty-based
+approaches fail to learn in such settings. In 5-Card Draw Poker,
+the agent faces a discrete action space of 35 actions (Fold, Call,
+Raise, and 32 draw bitmask combinations), of which only a small
+subset is legal at any given game state. Action masking is therefore
+essential for efficient learning and training stability.
+
+\subsection{Opponent Modeling and Behavioral Inference}
+
+Opponent modeling in multi-agent settings has been studied
+extensively, with approaches ranging from Bayesian inference over
+opponent type distributions to neural network-based latent
+representations. Explicit modeling approaches
+build a dedicated representation of the opponent (e.g., type
+classification or hand-range estimation), while implicit approaches
+allow the agent's policy to adapt to opponent behavior through
+reward-maximizing experience without an explicit opponent model. The
+rolling-statistics approach employed by Model~B, tracking metrics
+such as VPIP (Voluntarily Put In Pot), Pre-draw Raise frequency, and
+Aggression Factor, aligns with the behavioral profiling tradition in
+poker theory and has parallels with the latent opponent-embedding
+approaches studied in recent deep multi-agent RL literature.
+
+\subsection{Hyperparameter Optimization}
+
+Hyperparameter optimization (HPO) is critical for RL systems, where
+training outcomes are sensitive to learning rates, architecture
+choices, and exploration-exploitation trade-offs. Akiba et
+al.~\cite{akiba2019optuna} introduced Optuna, a next-generation HPO
+framework using tree-structured Parzen estimators (TPE) for efficient
+Bayesian search. We employ Optuna's MedianPruner with warm-up steps
+to prune underperforming trials early, enabling efficient search over
+a 15-dimensional hyperparameter space.
+
+\subsection{Reward Shaping}
+
+Ng et al.~\cite{ng1999policy} established the theoretical foundation
+for potential-based reward shaping, proving that shaped rewards
+preserve the set of optimal policies under suitable conditions. In
+poker, raw chip profit is a natural but sparse reward signal. We
+introduce two auxiliary shaping terms---a penalty for folding when
+checking was available, and a bonus for successful steal attempts---to
+guide the agent toward more aggressive exploitation strategies.
+
+% =====================================================================
+\section{Environment Design}
+\label{sec:env}
+
+\subsection{5-Card Draw Poker Rules}
+
+CardShark-RL implements limit heads-up 5-Card Draw Poker, a
+two-player variant in which each player is dealt five private cards
+and proceeds through four phases:
+\begin{enumerate}
+    \item \textbf{Antes}: Both players post a forced bet of 1 chip.
+    \item \textbf{Pre-draw betting}: A round of limit betting using
+    a small bet of 2 chips, with up to 4 raises.
+    \item \textbf{Draw phase}: Each player selects 0--5 cards to
+    discard and receives replacements from the deck.
+    \item \textbf{Post-draw betting}: A final round of betting using
+    a big bet of 4 chips, with up to 4 raises.
+    \item \textbf{Showdown}: The player with the best 5-card hand
+    wins the pot.
+\end{enumerate}
+
+A player may win before showdown by causing the opponent to fold.
+
+\subsection{PettingZoo AEC Environment}
+
+The game is implemented as a PettingZoo Agent-Environment Cycle (AEC)
+environment \cite{terry2021pettingzoo}, a standardized API for
+turn-based multi-agent systems. The AEC model alternates agent turns
+in a well-defined cycle, making it natural for sequential card games.
+The environment is wrapped by a Gymnasium-compatible
+\cite{brockman2016openai} single-agent wrapper (\texttt{DrawPokerGymEnv})
+that auto-steps the opponent, presenting the RL agent
+(\texttt{player\_0}) with a standard \texttt{(obs, reward, done,
+info)} interface.
+
+\subsection{Action Space}
+
+The action space is \texttt{Discrete(35)}:
+\begin{itemize}
+    \item \textbf{Action 0}: Fold
+    \item \textbf{Action 1}: Call / Check
+    \item \textbf{Action 2}: Raise / Bet
+    \item \textbf{Actions 3--34}: Draw actions, where the index
+    encodes a 5-bit bitmask over the five card positions
+    (bit $i = 1$ discards card~$i$). Action~3 corresponds to
+    bitmask~0 (stand pat; discard nothing), and Action~34
+    corresponds to bitmask~31 (discard all five cards).
+\end{itemize}
+
+An action mask vector of 35 binary flags is maintained at each
+step, enabling MaskablePPO \cite{huang2022closer} to restrict the
+policy to legal actions. During betting phases, only Actions 0--2
+are legal; during the draw phase, only Actions 3--34 are legal.
+
+\subsection{Observation Space}
+
+The observation vector is a 26-dimensional (for Model~A) or
+33-dimensional (for Model~B) float32 array normalized to $[0,1]$
+(or $[-1,1]$ for opponent-draw features). The core 23 features
+shared by both models are:
+
+\begin{itemize}
+    \item \textbf{Hand encoding} (10 features): For each of the
+    five cards, a normalized rank $\in [0,1]$ and normalized suit
+    $\in [0,1]$.
+    \item \textbf{Hand strength} (2 features): Normalized hand
+    category (0=High Card to 8=Straight Flush) and normalized
+    evaluation score.
+    \item \textbf{Pot features} (3 features): Normalized pot size,
+    normalized bet-to-call, and pot odds ratio.
+    \item \textbf{Phase encoding} (3 features): One-hot vector
+    $\in \{$pre-draw, draw, post-draw$\}$.
+    \item \textbf{Opponent draw count} (1 feature): Normalized
+    number of cards the opponent drew, or $-1$ if the draw phase
+    has not yet occurred.
+    \item \textbf{Strategic features} (4 features): Positional
+    indicator (in/out of position), own raise count (normalized),
+    opponent aggression flag, and opponent pre-draw raise flag.
+\end{itemize}
+
+\textbf{Model~A} appends a 3-dimensional one-hot vector encoding
+the opponent archetype (Calling Station, Maniac, or Rock).
+
+\textbf{Model~B} appends a 10-dimensional rolling statistics vector
+computed over the last $W$ hands:
+\begin{enumerate}
+    \item Fold frequency pre-draw
+    \item Fold frequency post-draw
+    \item Raise frequency post-draw
+    \item Average cards drawn (normalized)
+    \item Raise-then-stand-pat correlation
+    \item Fold-after-drawing-3 frequency
+    \item Raise-after-standing-pat frequency
+    \item VPIP (Voluntarily Put In Pot)
+    \item PFR (Pre-draw Raise frequency)
+    \item Aggression Factor (raises / calls, normalized)
+\end{enumerate}
+
+\subsection{Hand Evaluator}
+
+Cards are encoded as integers $0$--$51$ where $\text{rank} = c
+\bmod 13$ (0=2, \ldots, 12=A) and $\text{suit} = \lfloor c / 13
+\rfloor$ (0=Clubs, \ldots, 3=Spades). Hand evaluation returns a
+scalar score $= \text{category} \times 10^6 + \text{tiebreaker}$,
+where the tiebreaker uses base-14 encoding of rank groups, ensuring
+score ordering within and across all nine hand categories (High Card
+through Straight Flush).
+
+\subsection{Opponent Archetypes}
+
+Three hand-crafted deterministic/stochastic opponents model
+behaviorally distinct playing styles:
+
+\textbf{CallingStation} (Archetype~0): A passive opponent that never
+bluffs and never raises. It always calls and draws optimally by
+keeping its best group (pair, trips, etc.) and discarding kickers.
+
+\textbf{Maniac} (Archetype~1): An aggressive opponent that raises
+70\% of the time when raising is legal, and chases flush and straight
+draws 60\% of the time during the draw phase by drawing one card.
+It rarely folds (5\% probability), creating a loose, unpredictable style.
+
+\textbf{Rock} (Archetype~2): A tight-passive opponent that folds
+pre-draw on all unpaired hands if there is a bet to call, calls only
+with a pair below Jacks, raises with Jacks-or-better, and stands pat
+on two-pair or better hands. This opponent is the hardest to exploit,
+as it only invests chips with strong holdings.
+
+% =====================================================================
+\section{Methodology}
+\label{sec:method}
+
+\subsection{Training Algorithm: MaskablePPO}
+
+Both models are trained using MaskablePPO from sb3-contrib
+\cite{raffin2021stable}, a variant of Proximal Policy Optimization
+\cite{schulman2017proximal} that incorporates action masking directly
+into the policy gradient update. The policy is an MLP
+(Multi-Layer Perceptron) actor-critic network. The clipped
+surrogate objective of PPO is:
+
+\begin{equation}
+\mathcal{L}^{\text{CLIP}}(\theta) = \hat{\mathbb{E}}_t \left[
+  \min\!\left( r_t(\theta)\hat{A}_t,\;
+  \text{clip}(r_t(\theta), 1-\epsilon, 1+\epsilon)\hat{A}_t \right)
+\right]
+\label{eq:ppo}
+\end{equation}
+
+where $r_t(\theta) = \pi_\theta(a_t|s_t) / \pi_{\theta_\text{old}}
+(a_t|s_t)$ is the probability ratio and $\hat{A}_t$ is the
+Generalized Advantage Estimate (GAE) \cite{schulman2016high}. The
+GAE with parameter $\lambda$ interpolates between one-step TD error
+($\lambda=0$) and Monte Carlo returns ($\lambda=1$):
+
+\begin{equation}
+\hat{A}_t = \sum_{l=0}^{\infty} (\gamma\lambda)^l \delta_{t+l},
+\quad \delta_t = r_t + \gamma V(s_{t+1}) - V(s_t)
+\label{eq:gae}
+\end{equation}
+
+Action masking is applied at inference time by setting the
+log-probabilities of illegal actions to $-\infty$ before the
+softmax, ensuring the agent never samples illegal actions.
+Huang and Onta\~{n}{\'o}n~\cite{huang2022closer} demonstrate that
+this hard masking is both theoretically sound and empirically
+superior to penalty-based alternatives.
+
+\subsection{Network Architecture}
+
+Both models use an MLP policy with fully connected layers of
+equal width. The policy and value networks share no parameters;
+each is a separate MLP head on top of the shared feature extractor.
+For Model~B (implicit), the optimized architecture uses four hidden
+layers of 256 neurons each (depth chosen by HPO). For Model~A
+(explicit), a three-layer architecture of 256 neurons is used as the
+default.
+
+\subsection{Reward Function}
+
+The base reward at the end of each hand is the net chip profit:
+$r = \text{pot\_won} - \text{chips\_invested}$ for the winner, and
+$r = -\text{chips\_invested}$ for the loser. Ties yield $r=0$.
+
+Two shaping terms \cite{ng1999policy} are added:
+\begin{itemize}
+    \item \textbf{Fold penalty} $(-\alpha)$: Applied when the agent
+    folds during a phase in which checking would have been free
+    (bet-to-call = 0). This penalizes unnecessarily surrendering
+    equity.
+    \item \textbf{Steal bonus} $(+\beta)$: Applied when the agent
+    raises and the opponent subsequently folds (a successful steal).
+    This rewards aggressive pot-theft.
+\end{itemize}
+
+The shaping weights $\alpha$ and $\beta$ are treated as
+hyperparameters and tuned by Optuna. For Model~B, the optimized
+values are $\alpha = 0.296$ and $\beta = 0.448$.
+
+\subsection{Opponent Scheduling}
+
+For Model~A (explicit), random opponent scheduling is used:
+a new archetype is chosen uniformly at random before each episode.
+Since the agent has direct access to the opponent's identity through
+the one-hot feature, it can immediately condition its policy on the
+current archetype.
+
+For Model~B (implicit), a \textit{hybrid schedule} is employed. The
+first $H$ episodes use \textit{block scheduling}: opponents are
+cycled through in blocks of $B$ consecutive hands, allowing the
+rolling statistics to build up a stable behavioral signal before the
+agent can exploit it. After $H$ episodes, random scheduling is
+resumed to encourage robustness. The switch point $H$ and block size
+$B$ are chosen by HPO.
+
+\subsection{Hyperparameter Optimization with Optuna}
+
+We use Optuna \cite{akiba2019optuna} with Tree-structured Parzen
+Estimator (TPE) sampling and a MedianPruner to search over 15
+hyperparameters (Table~\ref{tab:hpo_space}). Each trial trains the
+model for 300,000 timesteps and is evaluated using a
+Rock-weighted objective:
+\begin{equation}
+\text{score} = 0.5 \cdot \text{BB}_{100}^{\text{Rock}}
+             + 0.25 \cdot \text{BB}_{100}^{\text{Station}}
+             + 0.25 \cdot \text{BB}_{100}^{\text{Maniac}}
+\label{eq:hpo_obj}
+\end{equation}
+
+The Rock archetype receives extra weight (0.5) because it is the
+hardest opponent to exploit and determines whether the agent has
+learned genuine strategic depth or is merely farming easy wins
+against passive opponents.
+
+\begin{table}[htbp]
+\caption{Hyperparameter Search Space for Optuna HPO}
+\label{tab:hpo_space}
+\centering
+\begin{tabular}{lll}
+\toprule
+\textbf{Hyperparameter} & \textbf{Range / Options} & \textbf{Type} \\
+\midrule
+learning\_rate      & $[5\times10^{-5},\;3\times10^{-4}]$ & log-uniform \\
+n\_steps            & \{1024, 2048, 4096\}                 & categorical \\
+batch\_size         & \{16, 32, 64\}                       & categorical \\
+n\_epochs           & $[10, 30]$                           & integer \\
+gamma               & $[0.96, 1.00]$                       & uniform \\
+ent\_coef           & $[0.001, 0.05]$                      & log-uniform \\
+clip\_range         & $[0.05, 0.40]$                       & uniform \\
+gae\_lambda         & $[0.80, 1.00]$                       & uniform \\
+vf\_coef            & $[0.25, 1.00]$                       & uniform \\
+max\_grad\_norm     & $[0.30, 1.00]$                       & uniform \\
+fold\_penalty       & $[0.10, 0.75]$                       & uniform \\
+steal\_bonus        & $[0.05, 1.00]$                       & uniform \\
+lr\_schedule        & \{linear, constant\}                 & categorical \\
+n\_layers           & $[2, 5]$                             & integer \\
+layer\_size         & \{128, 256, 512\}                    & categorical \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The best configuration found for Model~B is summarized in
+Table~\ref{tab:best_params}. A linear learning-rate schedule
+decaying from $1.05\times10^{-4}$ to zero was selected, reflecting
+the benefit of reduced exploration as the policy converges.
+
+\begin{table}[htbp]
+\caption{Best Hyperparameters for Model B (Implicit)}
+\label{tab:best_params}
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{Hyperparameter} & \textbf{Value} \\
+\midrule
+learning\_rate      & $1.045 \times 10^{-4}$ \\
+n\_steps            & 2048 \\
+batch\_size         & 32 \\
+n\_epochs           & 23 \\
+gamma               & 0.9831 \\
+ent\_coef           & 0.00416 \\
+clip\_range         & 0.1341 \\
+gae\_lambda         & 0.9020 \\
+vf\_coef            & 0.7069 \\
+max\_grad\_norm     & 0.7571 \\
+fold\_penalty       & 0.296 \\
+steal\_bonus        & 0.448 \\
+lr\_schedule        & linear \\
+net\_arch           & [256, 256, 256, 256] \\
+rolling\_window $W$ & 10 \\
+block\_size $B$     & 100 \\
+hybrid\_switch $H$  & 100{,}000 episodes \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Training Protocol}
+
+Both models are trained for 1{,}000{,}000 timesteps using
+$n_\text{envs} = 4$ parallel environments (DummyVecEnv) with
+distinct random seeds. A per-opponent evaluation callback runs every
+50{,}000 timesteps, reporting intermediate BB/100 values for each
+archetype to monitor learning dynamics. Training is performed on a
+single machine; the device is selected automatically (CPU or CUDA).
+
+\subsection{Evaluation Metric: BB/100}
+
+Performance is reported in \textit{big blinds per 100 hands}
+(BB/100), a standard poker metric:
+\begin{equation}
+\text{BB/100} = \frac{\text{total profit}}{\text{number of hands}} \times 100
+\label{eq:bb100}
+\end{equation}
+
+where the big blind equals 4 chips (the post-draw bet size) in
+our game. A positive BB/100 indicates a profitable strategy; a
+negative value indicates a losing strategy. Each evaluation run
+uses 10{,}000 hands against a fixed opponent archetype with a warm-up
+phase of 50 random hands (for Model~B only) to populate the rolling
+statistics buffer before evaluation begins.
+
+% =====================================================================
+\section{Experimental Results}
+\label{sec:results}
+% Sections 5--7 are reserved for future completion per project scope.
+\textit{[Sections 5–7: Evaluation and Results, Discussion and
+Limitations, and Conclusion and Future Work are reserved for
+completion in the final submission.]}
+
+% =====================================================================
+\section*{Acknowledgment}
+The authors thank the Department of Computer Engineering at Izmir
+Katip Celebi University for providing computational resources and
+course infrastructure.
+
+% =====================================================================
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}
