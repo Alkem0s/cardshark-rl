@@ -196,13 +196,10 @@ def train_model(
     if rolling_window is None:
         rolling_window = 50 if use_implicit else 50
     if opponent_schedule is None:
-        if use_implicit:
-            opponent_schedule = "hybrid"
-            if hybrid_switch_episodes is None:
-                # Switch halfway through training (approx episodes = timesteps/3 steps avg)
-                hybrid_switch_episodes = total_timesteps // 3
-        else:
-            opponent_schedule = "random"
+        opponent_schedule = "hybrid"
+        if hybrid_switch_episodes is None:
+            # Switch halfway through training (approx episodes = timesteps/3 steps avg)
+            hybrid_switch_episodes = total_timesteps // 3
 
     os.makedirs(save_dir, exist_ok=True)
     os.makedirs(log_dir, exist_ok=True)

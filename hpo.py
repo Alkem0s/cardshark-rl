@@ -16,14 +16,30 @@ Usage:
 
 from __future__ import annotations
 import os
+
+# ---------------------------------------------------------------------------
+# IMPORTANT: prevent CPU oversubscription
+# Must happen BEFORE torch import
+# ---------------------------------------------------------------------------
+
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 import json
 import logging
 import sys
 import warnings
+import time
 from datetime import datetime
 from typing import Optional
 
 import numpy as np
+import torch
+
+torch.set_num_threads(1)
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -104,10 +120,9 @@ class TrialEvalCallback(BaseCallback):
         self,
         trial: "optuna.Trial",
         use_implicit: bool = True,
-        eval_interval: int = 75_000,
+        eval_interval: int = 25_000,
         eval_hands: int = 500,
         seed: int = 0,
-        logger: logging.Logger | None = None,
         verbose: int = 0,
     ):
         super().__init__(verbose)
@@ -116,16 +131,37 @@ class TrialEvalCallback(BaseCallback):
         self.eval_interval = eval_interval
         self.eval_hands = eval_hands
         self.seed = seed
-        self.hpo_logger = logger
         self._last_eval_step = 0
         self.best_score = -999.0
+        self.last_wall_time = time.time()
 
     def _on_step(self) -> bool:
         if self.num_timesteps - self._last_eval_step >= self.eval_interval:
+            now = time.time()
+
+            elapsed = now - self.last_wall_time
+            self.last_wall_time = now
+
+            print(
+                f"[Trial {self.trial.number}] "
+                f"reached {self.num_timesteps:,} steps "
+                f"(+{elapsed:.1f}s since last report)",
+                flush=True,
+            )
+
             self._last_eval_step = self.num_timesteps
 
+            eval_start = time.time()
+
             per_opp = {}
+
             for opp_id, opp_name in enumerate(OPP_NAMES):
+                print(
+                    f"[Trial {self.trial.number}] "
+                    f"evaluating vs {opp_name}...",
+                    flush=True,
+                )
+
                 result = run_tournament(
                     self.model,
                     use_implicit=self.use_implicit,
@@ -133,25 +169,40 @@ class TrialEvalCallback(BaseCallback):
                     num_hands=self.eval_hands,
                     seed=self.seed + opp_id,
                 )
+
                 per_opp[opp_name] = result["bb_per_100"]
+
+            eval_time = time.time() - eval_start
 
             score = _weighted_bb(per_opp)
 
-            if self.hpo_logger:
-                self.hpo_logger.info(
-                    f"  Trial {self.trial.number} @ {self.num_timesteps:,} steps: "
-                    f"weighted={score:+.2f} "
-                    + " | ".join(f"{k}={v:+.1f}" for k, v in per_opp.items())
-                )
+            print(
+                f"[Trial {self.trial.number}] "
+                f"EVAL DONE in {eval_time:.1f}s | "
+                f"weighted={score:+.2f} | "
+                + " | ".join(f"{k}={v:+.1f}" for k, v in per_opp.items()),
+                flush=True,
+            )
 
             self.trial.report(score, step=self.num_timesteps)
+
             if self.trial.should_prune():
+                print(f"[Trial {self.trial.number}] PRUNED", flush=True)
                 raise TrialPruned()
 
             self.best_score = max(self.best_score, score)
 
         return True
 
+
+class DebugCallback(BaseCallback):
+    def _on_step(self):
+        if self.num_timesteps % 1000 == 0:
+            print(
+                f"[Trial] {self.num_timesteps} timesteps",
+                flush=True,
+            )
+        return True
 
 # ---------------------------------------------------------------------------
 # Objective factory
@@ -163,97 +214,181 @@ def create_objective(
     eval_hands: int = 2_000,
     seed: int = 42,
     device: str = "auto",
-    logger: logging.Logger | None = None,
+    n_envs: int = 1,
+    logger: Optional[logging.Logger] = None,
 ):
     """Create an Optuna objective closure.
 
     Args:
         use_implicit: If True, optimise Model B (implicit/block scheduling).
                       If False, optimise Model A (explicit/random scheduling).
+        n_envs: Number of parallel environments per trial.
     """
 
     def objective(trial: "optuna.Trial") -> float:
         """Train a model with sampled hyperparameters and return weighted BB/100."""
 
         # ------------------------------------------------------------------
-        # Sample hyperparameters — narrowed around current best region
+        # Sample hyperparameters
         # ------------------------------------------------------------------
-        learning_rate = trial.suggest_float("learning_rate", 5e-5, 3e-4, log=True)
-        n_steps = trial.suggest_categorical("n_steps", [1024, 2048, 4096])
-        batch_size = trial.suggest_categorical("batch_size", [16, 32, 64])
-        n_epochs = trial.suggest_int("n_epochs", 10, 30)
-        gamma = trial.suggest_float("gamma", 0.96, 1.0)
-        ent_coef = trial.suggest_float("ent_coef", 0.001, 0.05, log=True)
 
-        # New PPO params
-        clip_range = trial.suggest_float("clip_range", 0.05, 0.4)
-        gae_lambda = trial.suggest_float("gae_lambda", 0.8, 1.0)
-        vf_coef = trial.suggest_float("vf_coef", 0.25, 1.0)
-        max_grad_norm = trial.suggest_float("max_grad_norm", 0.3, 1.0)
-
-        # Reward shaping weights
-        fold_penalty = trial.suggest_float("fold_penalty", 0.1, 0.75)
-        steal_bonus = trial.suggest_float("steal_bonus", 0.05, 1.0)
-
-        # LR schedule
-        lr_schedule = trial.suggest_categorical("lr_schedule", ["linear", "constant"])
-
-        # Implicit-only params
-        if use_implicit:
-            rolling_window = trial.suggest_categorical("rolling_window", [5, 10, 20, 30])
-            block_size = trial.suggest_categorical("block_size", [50, 100, 200, 300])
-            opponent_schedule = "hybrid"
-            hybrid_switch_episodes = trial.suggest_categorical(
-                "hybrid_switch_episodes_frac",
-                [0.6, 0.75, 0.9, 1.0]
-            )
-            # Store as fraction; convert to absolute episode count later
-            hybrid_switch_ep = int(hybrid_switch_episodes * (timesteps // 3))
-        else:
-            rolling_window = 50  # unused for explicit
-            block_size = 200
-            opponent_schedule = "random"
-            hybrid_switch_ep = None
-
-        # Network architecture
-        n_layers = trial.suggest_int("n_layers", 2, 5)
-        layer_size = trial.suggest_categorical("layer_size", [128, 256, 512])
-        net_arch = [layer_size] * n_layers
-
-        # Ensure batch_size <= n_steps
-        if batch_size > n_steps:
-            batch_size = n_steps
-
-        # Log trial parameters
-        if logger:
-            logger.info(f"{'='*60}")
-            logger.info(f"Trial {trial.number} starting ({'implicit' if use_implicit else 'explicit'})")
-            logger.info(f"  learning_rate: {learning_rate:.6f} ({lr_schedule})")
-            logger.info(f"  n_steps: {n_steps} | batch_size: {batch_size} | n_epochs: {n_epochs}")
-            logger.info(f"  gamma: {gamma:.4f} | ent_coef: {ent_coef:.6f}")
-            logger.info(f"  clip_range: {clip_range:.3f} | gae_lambda: {gae_lambda:.3f}")
-            logger.info(f"  vf_coef: {vf_coef:.3f} | max_grad_norm: {max_grad_norm:.3f}")
-            logger.info(f"  fold_penalty: {fold_penalty:.3f} | steal_bonus: {steal_bonus:.3f}")
-            logger.info(f"  net_arch: {net_arch}")
-            if use_implicit:
-                logger.info(f"  rolling_window: {rolling_window} | block_size: {block_size}")
-
-        # ------------------------------------------------------------------
-        # Build environment
-        # ------------------------------------------------------------------
-        env = DrawPokerGymEnv(
-            use_implicit_modeling=use_implicit,
-            opponent_id=None,
-            rolling_window=rolling_window,
-            rng_seed=seed,
-            opponent_schedule=opponent_schedule,
-            block_size=block_size,
-            hybrid_switch_episodes=hybrid_switch_ep,
-            fold_penalty=fold_penalty,
-            steal_bonus=steal_bonus,
+        learning_rate = trial.suggest_float(
+            "learning_rate",
+            5e-5,
+            3e-4,
+            log=True,
         )
-        env = ActionMasker(env, mask_fn)
-        env = Monitor(env)
+
+        n_steps = trial.suggest_categorical(
+            "n_steps",
+            [2048, 4096],
+        )
+
+        batch_size = trial.suggest_categorical(
+            "batch_size",
+            [32, 64],
+        )
+
+        n_epochs = trial.suggest_int(
+            "n_epochs",
+            10,
+            24,
+        )
+
+        gamma = trial.suggest_float(
+            "gamma",
+            0.96,
+            0.995,
+        )
+
+        ent_coef = trial.suggest_float(
+            "ent_coef",
+            0.001,
+            0.02,
+            log=True,
+        )
+
+        clip_range = trial.suggest_float(
+            "clip_range",
+            0.1,
+            0.4,
+        )
+
+        gae_lambda = trial.suggest_float(
+            "gae_lambda",
+            0.85,
+            0.98,
+        )
+
+        vf_coef = trial.suggest_float(
+            "vf_coef",
+            0.3,
+            0.9,
+        )
+
+        max_grad_norm = trial.suggest_float(
+            "max_grad_norm",
+            0.4,
+            0.9,
+        )
+
+        fold_penalty = trial.suggest_float(
+            "fold_penalty",
+            0.1,
+            0.75,
+        )
+
+        steal_bonus = trial.suggest_float(
+            "steal_bonus",
+            0.05,
+            1.0,
+        )
+
+        lr_schedule = trial.suggest_categorical(
+            "lr_schedule",
+            ["linear", "constant"],
+        )
+
+        rolling_window = trial.suggest_categorical(
+            "rolling_window",
+            [5, 10, 20],
+        )
+
+        block_size = trial.suggest_categorical(
+            "block_size",
+            [50, 100, 200],
+        )
+
+        hybrid_switch_episodes_frac = trial.suggest_categorical(
+            "hybrid_switch_episodes_frac",
+            [0.6, 0.75, 0.9],
+        )
+        hybrid_switch_ep = int(hybrid_switch_episodes_frac * (timesteps // 3))
+
+        # ------------------------------------------------------------------
+        # Network architecture
+        # ------------------------------------------------------------------
+
+        n_layers = trial.suggest_int(
+            "n_layers",
+            2,
+            3,
+        )
+
+        layer_size = trial.suggest_categorical(
+            "layer_size",
+            [128, 256],
+        )
+
+        net_arch = [layer_size] * n_layers
+        opponent_schedule = "hybrid"
+
+        # Ensure batch_size is valid for vectorised env
+        total_rollout = n_steps * n_envs
+        if batch_size > total_rollout:
+            batch_size = total_rollout
+
+        # Log trial parameters locally
+        trial_header = f"""
+        ============================================================
+        Trial {trial.number} starting ({'implicit' if use_implicit else 'explicit'}) | n_envs={n_envs}
+        learning_rate: {learning_rate:.6f} ({lr_schedule})
+        n_steps: {n_steps} | batch_size: {batch_size} | n_epochs: {n_epochs}
+        gamma: {gamma:.4f} | ent_coef: {ent_coef:.6f}
+        clip_range: {clip_range:.3f} | gae_lambda: {gae_lambda:.3f}
+        vf_coef: {vf_coef:.3f} | max_grad_norm: {max_grad_norm:.3f}
+        fold_penalty: {fold_penalty:.3f} | steal_bonus: {steal_bonus:.3f}
+        net_arch: {net_arch}
+        ============================================================
+        """
+
+        print(trial_header, flush=True)
+                
+        if use_implicit:
+            print(f"  rolling_window: {rolling_window} | block_size: {block_size}")
+
+        # ------------------------------------------------------------------
+        # Build vectorized environment
+        # ------------------------------------------------------------------
+        from stable_baselines3.common.vec_env import DummyVecEnv
+
+        def _make_env(env_seed: int):
+            def _init():
+                raw = DrawPokerGymEnv(
+                    use_implicit_modeling=use_implicit,
+                    opponent_id=None,
+                    rolling_window=rolling_window,
+                    rng_seed=env_seed,
+                    opponent_schedule=opponent_schedule,
+                    block_size=block_size,
+                    hybrid_switch_episodes=hybrid_switch_ep,
+                    fold_penalty=fold_penalty,
+                    steal_bonus=steal_bonus,
+                )
+                return Monitor(ActionMasker(raw, mask_fn))
+            return _init
+
+        env = DummyVecEnv([_make_env(seed + i) for i in range(n_envs)])
 
         # LR param
         if lr_schedule == "linear":
@@ -288,21 +423,37 @@ def create_objective(
         eval_callback = TrialEvalCallback(
             trial=trial,
             use_implicit=use_implicit,
-            eval_interval=75_000,
+            eval_interval=25_000,
             eval_hands=eval_hands // 4,
             seed=seed,
-            logger=logger,
         )
 
+        debug_callback = DebugCallback()
+
+        train_start = time.time()
+
         try:
+            print(
+                f"[Trial {trial.number}] starting learn()...",
+                flush=True,
+            )
+
             model.learn(
                 total_timesteps=timesteps,
                 callback=eval_callback,
                 progress_bar=False,
             )
+
+            train_time = time.time() - train_start
+
+            print(
+                f"[Trial {trial.number}] training finished "
+                f"in {train_time/60:.1f} minutes",
+                flush=True,
+            )
+
         except TrialPruned:
-            if logger:
-                logger.info(f"Trial {trial.number} PRUNED")
+            print(f"[Trial {trial.number}] PRUNED", flush=True)
             env.close()
             raise
 
@@ -324,12 +475,11 @@ def create_objective(
         min_bb = min(per_opp.values())
         worst_opp = min(per_opp, key=per_opp.get)
 
-        if logger:
-            logger.info(f"Trial {trial.number} COMPLETE")
-            for opp_name, bb in per_opp.items():
-                marker = " ◄ WORST" if opp_name == worst_opp else ""
-                logger.info(f"  vs {opp_name}: {bb:+.2f} BB/100{marker}")
-            logger.info(f"  weighted={weighted:+.2f}, min={min_bb:+.2f} (objective=weighted)")
+        print(f"Trial {trial.number} COMPLETE")
+        for opp_name, bb in per_opp.items():
+            marker = " < WORST" if opp_name == worst_opp else ""
+            print(f"  vs {opp_name}: {bb:+.2f} BB/100{marker}")
+        print(f"  weighted={weighted:+.2f}, min={min_bb:+.2f}")
 
         env.close()
         return weighted
@@ -348,15 +498,16 @@ def run_hpo_single(
     eval_hands: int = 2_000,
     seed: int = 42,
     device: str = "auto",
+    n_envs: int = 1,
+    n_jobs: int = 1,
     results_dir: str = "results",
     suffix: str = "",
 ) -> dict:
     """Run Optuna HPO for one model (implicit or explicit).
 
-    Returns a dict of kwargs suitable for train_model():
-        {learning_rate, n_steps, batch_size, n_epochs, gamma, ent_coef,
-         clip_range, gae_lambda, vf_coef, max_grad_norm,
-         fold_penalty, steal_bonus, net_arch, ...}
+    Args:
+        n_envs: Parallel environments per trial.
+        n_jobs: Parallel trials (using multiple CPU cores).
     """
     if not HAS_OPTUNA:
         print("  ERROR: Optuna not installed. Run: pip install optuna")
@@ -370,7 +521,7 @@ def run_hpo_single(
     logger.info(f"Steps per trial: {timesteps_per_trial:,}")
     logger.info(f"Eval hands: {eval_hands:,}")
     logger.info(f"Objective: weighted BB/100 (Rock×0.5, Station×0.25, Maniac×0.25)")
-    logger.info(f"Seed: {seed} | Device: {device}")
+    logger.info(f"Seed: {seed} | Device: {device} | n_envs: {n_envs} | n_jobs: {n_jobs}")
     logger.info("")
 
     study = optuna.create_study(
@@ -385,10 +536,17 @@ def run_hpo_single(
         eval_hands=eval_hands,
         seed=seed,
         device=device,
+        n_envs=n_envs,
         logger=logger,
     )
 
-    study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
+    study.optimize(
+        objective,
+        n_trials=n_trials,
+        n_jobs=n_jobs,
+        show_progress_bar=True,
+        gc_after_trial=True,
+    )
 
     # Log summary
     logger.info("")
@@ -465,6 +623,8 @@ def run_hpo(
     eval_hands: int = 2_000,
     seed: int = 42,
     device: str = "auto",
+    n_envs: int = 1,
+    n_jobs: int = 1,
     results_dir: str = "results",
     hpo_model: str = "b",  # "a", "b", or "both"
 ) -> dict:
@@ -489,13 +649,15 @@ def run_hpo(
         params_a = run_hpo_single(
             use_implicit=False, n_trials=n_trials,
             timesteps_per_trial=timesteps_per_trial, eval_hands=eval_hands,
-            seed=seed, device=device, results_dir=results_dir, suffix="_model_a",
+            seed=seed, device=device, n_envs=n_envs, n_jobs=n_jobs,
+            results_dir=results_dir, suffix="_model_a",
         )
         print("\n  Running HPO for Model B (Implicit)...")
         params_b = run_hpo_single(
             use_implicit=True, n_trials=n_trials,
             timesteps_per_trial=timesteps_per_trial, eval_hands=eval_hands,
-            seed=seed, device=device, results_dir=results_dir, suffix="_model_b",
+            seed=seed, device=device, n_envs=n_envs, n_jobs=n_jobs,
+            results_dir=results_dir, suffix="_model_b",
         )
         # Save combined best_params.json
         _save_best_params(params_a, params_b, results_dir)
@@ -505,37 +667,34 @@ def run_hpo(
         params = run_hpo_single(
             use_implicit=False, n_trials=n_trials,
             timesteps_per_trial=timesteps_per_trial, eval_hands=eval_hands,
-            seed=seed, device=device, results_dir=results_dir, suffix="_model_a",
+            seed=seed, device=device, n_envs=n_envs, n_jobs=n_jobs,
+            results_dir=results_dir, suffix="_model_a",
         )
         _save_best_params(params, None, results_dir)
-        return params
+        return {"model_a": params}
 
     else:  # "b" (default)
         params = run_hpo_single(
             use_implicit=True, n_trials=n_trials,
             timesteps_per_trial=timesteps_per_trial, eval_hands=eval_hands,
-            seed=seed, device=device, results_dir=results_dir, suffix="_model_b",
+            seed=seed, device=device, n_envs=n_envs, n_jobs=n_jobs,
+            results_dir=results_dir, suffix="_model_b",
         )
         _save_best_params(None, params, results_dir)
-        return params
+        return {"model_b": params}
 
 
 def _save_best_params(params_a: dict | None, params_b: dict | None, results_dir: str):
-    """Persist best params to the project root best_params.json."""
-    root_path = "best_params.json"
-    data: dict = {}
-    if os.path.exists(root_path):
-        try:
-            with open(root_path) as f:
-                data = json.load(f)
-        except Exception:
-            data = {}
-
+    """Persist best params to best_params_a.json and best_params_b.json."""
     if params_a is not None:
-        data["model_a"] = {"params": params_a}
-    if params_b is not None:
-        data["model_b"] = {"params": params_b}
+        path_a = "best_params_a.json"
+        with open(path_a, "w") as f:
+            # Save as flat dict for clarity
+            json.dump(params_a, f, indent=2)
+        print(f"  Saved Model A params to: {path_a}")
 
-    with open(root_path, "w") as f:
-        json.dump(data, f, indent=2)
-    print(f"  Saved best params to: {root_path}")
+    if params_b is not None:
+        path_b = "best_params_b.json"
+        with open(path_b, "w") as f:
+            json.dump(params_b, f, indent=2)
+        print(f"  Saved Model B params to: {path_b}")

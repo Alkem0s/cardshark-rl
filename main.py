@@ -91,31 +91,46 @@ def update_latest(run_dir: str, base: str = "results"):
 
 
 def load_best_params() -> dict:
-    """Load saved HPO params from best_params.json.
+    """Load saved HPO params from best_params_a.json and best_params_b.json.
 
     Returns a dict that may have keys 'model_a' and/or 'model_b',
-    each pointing to a params sub-dict, OR a flat params dict (legacy format).
+    each pointing to a params sub-dict.
     """
-    path = "best_params.json"
-    if not os.path.exists(path):
-        return {}
-    with open(path) as f:
-        data = json.load(f)
+    result = {}
 
-    # New format: {"model_a": {"params": {...}}, "model_b": {"params": {...}}}
-    if "model_a" in data or "model_b" in data:
-        result = {}
-        if "model_a" in data:
-            result["model_a"] = data["model_a"].get("params", data["model_a"])
-        if "model_b" in data:
-            result["model_b"] = data["model_b"].get("params", data["model_b"])
-        return result
+    # 1. Load Model A
+    path_a = "best_params_a.json"
+    if os.path.exists(path_a):
+        with open(path_a) as f:
+            data = json.load(f)
+            result["model_a"] = data.get("params", data)
 
-    # Legacy flat format: {"params": {...}} or {"best_value": ..., "params": {...}}
-    params = data.get("params", data)
-    # Remove non-train_model keys
-    params.pop("best_value", None)
-    return {"model_b": params}  # Legacy assumed to be Model B
+    # 2. Load Model B
+    path_b = "best_params_b.json"
+    if os.path.exists(path_b):
+        with open(path_b) as f:
+            data = json.load(f)
+            result["model_b"] = data.get("params", data)
+
+    # 3. Legacy fallback (best_params.json)
+    if not result:
+        path_legacy = "best_params.json"
+        if os.path.exists(path_legacy):
+            with open(path_legacy) as f:
+                data = json.load(f)
+
+            if "model_a" in data or "model_b" in data:
+                if "model_a" in data:
+                    result["model_a"] = data["model_a"].get("params", data["model_a"])
+                if "model_b" in data:
+                    result["model_b"] = data["model_b"].get("params", data["model_b"])
+            else:
+                params = data.get("params", data)
+                if isinstance(params, dict):
+                    params.pop("best_value", None)
+                result["model_b"] = params
+
+    return result
 
 
 def main():
@@ -147,6 +162,10 @@ def main():
         help="Which model to run HPO for: 'a', 'b', or 'both' (default: 'b')"
     )
     parser.add_argument(
+        "--hpo-jobs", type=int, default=1,
+        help="Number of parallel Optuna trials (default: 1)"
+    )
+    parser.add_argument(
         "--timesteps", type=int, default=None,
         help="Custom training timesteps (overrides --quick/--medium)"
     )
@@ -168,7 +187,7 @@ def main():
         help="Random seed (default: 42)"
     )
     parser.add_argument(
-        "--n-envs", type=int, default=4,
+        "--n-envs", type=int, default=1,
         help="Number of parallel training environments (default: 4)"
     )
     parser.add_argument(
@@ -211,6 +230,8 @@ def main():
             eval_hands=2_000,
             seed=args.seed,
             device=args.device,
+            n_envs=args.n_envs,
+            n_jobs=args.hpo_jobs,
             results_dir=run_dir,
             hpo_model=args.hpo_model,
         )
@@ -219,25 +240,27 @@ def main():
         loaded = load_best_params()
         if loaded:
             hpo_params = loaded
-            print(f"\n  Loaded saved hyperparameters from 'best_params.json'")
+            print(f"\n  Loaded saved hyperparameters from best_params_[a|b].json")
             for k, v in hpo_params.items():
                 print(f"    {k}: {v}")
             print()
 
     # Resolve per-model param dicts
-    # hpo_params may be:
-    #   {"model_a": {...}, "model_b": {...}}  — separate HPO
-    #   {"model_b": {...}}                    — legacy / single-model HPO
-    #   {}                                    — no HPO, use defaults
+    # hpo_params is usually {"model_a": {...}, "model_b": {...}}
     if "model_a" in hpo_params or "model_b" in hpo_params:
         model_a_params = hpo_params.get("model_a", {})
         model_b_params = hpo_params.get("model_b", {})
-        shared_params = {}
     else:
-        # Flat dict — treat as Model B params, Model A uses defaults
-        model_a_params = {}
-        model_b_params = hpo_params
-        shared_params = {}
+        # Fallback for flat dict (legacy/manual configs)
+        if args.hpo and args.hpo_model == "a":
+            model_a_params = hpo_params
+            model_b_params = {}
+        else:
+            # Default fallback (usually Model B)
+            model_a_params = {}
+            model_b_params = hpo_params
+
+    shared_params = {}
 
     # ------------------------------------------------------------------
     # Phase 1: Training

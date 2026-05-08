@@ -1,0 +1,22 @@
+{
+  "learning_rate": 0.0001548699449749059,
+  "n_steps": 2048,
+  "batch_size": 32,
+  "n_epochs": 24,
+  "gamma": 0.9850365799371623,
+  "ent_coef": 0.003556820937903574,
+  "clip_range": 0.27766815612819973,
+  "gae_lambda": 0.8808972562641227,
+  "vf_coef": 0.7121457766440187,
+  "max_grad_norm": 0.74481602178517,
+  "fold_penalty": 0.10433805957081838,
+  "steal_bonus": 0.8793058183492567,
+  "lr_schedule": "linear",
+  "rolling_window": 10,
+  "block_size": 100,
+  "net_arch": [
+    128,
+    128
+  ],
+  "hybrid_switch_episodes": 90000
+}
