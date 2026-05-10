@@ -150,6 +150,7 @@ def train_model(
     opponent_schedule: str | None = None,
     block_size: int = 200,
     hybrid_switch_timesteps: int | None = None,
+    hybrid_switch_timesteps_frac: float | None = None,
     fold_penalty: float = 0.3,
     steal_bonus: float = 0.2,
     n_envs: int = 1,
@@ -197,7 +198,11 @@ def train_model(
         rolling_window = 50 if use_implicit else 50
     if opponent_schedule is None:
         opponent_schedule = "hybrid"
-        if hybrid_switch_timesteps is None:
+        
+    if opponent_schedule == "hybrid" and hybrid_switch_timesteps is None:
+        if hybrid_switch_timesteps_frac is not None:
+            hybrid_switch_timesteps = int(hybrid_switch_timesteps_frac * total_timesteps)
+        else:
             # Switch halfway through training
             hybrid_switch_timesteps = total_timesteps // 2
 

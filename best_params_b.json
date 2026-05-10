@@ -1,16 +1,16 @@
 {
-  "learning_rate": 0.00020929424642066348,
+  "learning_rate": 0.0003497605906597301,
   "n_steps": 2048,
   "batch_size": 64,
-  "n_epochs": 7,
-  "gamma": 0.9945195786653828,
-  "ent_coef": 0.007302466677496596,
-  "clip_range": 0.2304854748498268,
-  "gae_lambda": 0.9334484929595707,
-  "vf_coef": 0.4123785002096272,
-  "max_grad_norm": 0.32638088098960927,
-  "fold_penalty": 0.29965303770608925,
-  "steal_bonus": 0.2863466485582109,
+  "n_epochs": 11,
+  "gamma": 0.9893668541036246,
+  "ent_coef": 0.004570596534746265,
+  "clip_range": 0.1938812243187933,
+  "gae_lambda": 0.9216338130102856,
+  "vf_coef": 0.4297605082298325,
+  "max_grad_norm": 0.463631931931016,
+  "fold_penalty": 0.32820264938990495,
+  "steal_bonus": 0.2116140006874182,
   "lr_schedule": "linear",
   "rolling_window": 50,
   "block_size": 400,
@@ -20,5 +20,5 @@
     256,
     256
   ],
-  "hybrid_switch_timesteps": 298922
+  "hybrid_switch_timesteps_frac": 0.9721606593169765
 }

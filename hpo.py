@@ -290,7 +290,7 @@ def create_objective(
             n_layers = trial.suggest_int("n_layers", 4, 4)
             layer_size = trial.suggest_categorical("layer_size", [256])
             
-            hybrid_switch_episodes_frac = trial.suggest_float("hybrid_switch_episodes_frac", 0.7, 1.0)
+            hybrid_switch_timesteps_frac = trial.suggest_float("hybrid_switch_timesteps_frac", 0.7, 1.0)
         else:
             # Model A Search Space (Explicit)
             n_steps = trial.suggest_categorical("n_steps", [2048, 4096])
@@ -306,9 +306,9 @@ def create_objective(
             n_layers = trial.suggest_int("n_layers", 2, 3)
             layer_size = trial.suggest_categorical("layer_size", [128, 256])
             
-            hybrid_switch_episodes_frac = trial.suggest_float("hybrid_switch_episodes_frac", 0.1, 0.9)
+            hybrid_switch_timesteps_frac = trial.suggest_float("hybrid_switch_timesteps_frac", 0.1, 0.9)
 
-        hybrid_switch_ts = int(hybrid_switch_episodes_frac * timesteps)
+        hybrid_switch_ts = int(hybrid_switch_timesteps_frac * timesteps)
 
         net_arch = [layer_size] * n_layers
         opponent_schedule = "hybrid"
@@ -329,7 +329,7 @@ def create_objective(
         vf_coef: {vf_coef:.3f} | max_grad_norm: {max_grad_norm:.3f}
         fold_penalty: {fold_penalty:.3f} | steal_bonus: {steal_bonus:.3f}
         rolling_window: {rolling_window} | block_size: {block_size}
-        switch_frac: {hybrid_switch_episodes_frac:.3f} | switch_ts: {hybrid_switch_ts}
+        switch_frac: {hybrid_switch_timesteps_frac:.3f} | switch_ts: {hybrid_switch_ts}
         net_arch: {net_arch}
         ============================================================
         """

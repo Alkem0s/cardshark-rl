@@ -18,5 +18,5 @@
     128,
     128
   ],
-  "hybrid_switch_episodes": 60000
+  "hybrid_switch_timesteps_frac": 0.18
 }
