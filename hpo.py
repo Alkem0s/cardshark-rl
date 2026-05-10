@@ -234,14 +234,14 @@ def create_objective(
 
         learning_rate = trial.suggest_float(
             "learning_rate",
-            5e-5,
-            3e-4,
+            1e-4,
+            5e-4,
             log=True,
         )
 
         n_steps = trial.suggest_categorical(
             "n_steps",
-            [2048, 4096],
+            [1024],
         )
 
         batch_size = trial.suggest_categorical(
@@ -251,57 +251,57 @@ def create_objective(
 
         n_epochs = trial.suggest_int(
             "n_epochs",
-            10,
-            24,
+            5,
+            12,
         )
 
         gamma = trial.suggest_float(
             "gamma",
-            0.96,
-            0.995,
+            0.95,
+            0.98,
         )
 
         ent_coef = trial.suggest_float(
             "ent_coef",
-            0.001,
-            0.02,
+            0.002,
+            0.015,
             log=True,
         )
 
         clip_range = trial.suggest_float(
             "clip_range",
-            0.1,
-            0.4,
+            0.15,
+            0.25,
         )
 
         gae_lambda = trial.suggest_float(
             "gae_lambda",
-            0.85,
+            0.9,
             0.98,
         )
 
         vf_coef = trial.suggest_float(
             "vf_coef",
             0.3,
-            0.9,
+            0.7,
         )
 
         max_grad_norm = trial.suggest_float(
             "max_grad_norm",
-            0.4,
-            0.9,
+            0.3,
+            0.7,
         )
 
         fold_penalty = trial.suggest_float(
             "fold_penalty",
-            0.1,
-            0.75,
+            0.2,
+            0.4,
         )
 
         steal_bonus = trial.suggest_float(
             "steal_bonus",
-            0.05,
-            1.0,
+            0.1,
+            0.3,
         )
 
         lr_schedule = trial.suggest_categorical(
@@ -311,12 +311,12 @@ def create_objective(
 
         rolling_window = trial.suggest_categorical(
             "rolling_window",
-            [5, 10, 20],
+            [20, 50, 100],
         )
 
         block_size = trial.suggest_categorical(
             "block_size",
-            [50, 100, 200],
+            [200, 400],
         )
 
         hybrid_switch_episodes_frac = trial.suggest_categorical(
@@ -331,13 +331,13 @@ def create_objective(
 
         n_layers = trial.suggest_int(
             "n_layers",
-            2,
             3,
+            4,
         )
 
         layer_size = trial.suggest_categorical(
             "layer_size",
-            [128, 256],
+            [256],
         )
 
         net_arch = [layer_size] * n_layers

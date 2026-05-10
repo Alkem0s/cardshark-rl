@@ -5,16 +5,16 @@ Decoding "The Tell": Exploitative Reinforcement Learning
 and Implicit Opponent Modeling in 5-Card Draw Poker.
 
 Usage:
-    python main.py                       # Full run (1M steps, 3-seed eval)
-    python main.py --medium              # Medium run (500K steps)
-    python main.py --quick               # Quick dev run (50K steps)
-    python main.py --eval-only           # Skip training, evaluate saved models
-    python main.py --hpo                 # HPO for Model B (default), then train
-    python main.py --hpo --hpo-model a   # HPO for Model A only
-    python main.py --hpo --hpo-model both# Separate HPO for A and B
-    python main.py --timesteps N         # Custom timestep count
-    python main.py --n-envs 4            # Train with 4 parallel envs
-    python main.py --eval-seeds 0 1 2    # Multi-seed evaluation
+    python main.py                        # Full run (1M steps, 3-seed eval)
+    python main.py --medium               # Medium run (500K steps)
+    python main.py --quick                # Quick dev run (50K steps)
+    python main.py --eval-only            # Skip training, evaluate saved models
+    python main.py --hpo                  # HPO for Model B (default), then train
+    python main.py --hpo --hpo-model a    # HPO for Model A only
+    python main.py --hpo --hpo-model both # Separate HPO for A and B
+    python main.py --timesteps N          # Custom timestep count
+    python main.py --n-envs 4             # Train with 4 parallel envs
+    python main.py --eval-seeds 0 1 2     # Multi-seed evaluation
 """
 
 from __future__ import annotations
@@ -166,6 +166,10 @@ def main():
         help="Number of parallel Optuna trials (default: 1)"
     )
     parser.add_argument(
+        "--train-model", type=str, default="both", choices=["a", "b", "both"],
+        help="Which model to train: 'a', 'b', or 'both' (default: 'both')"
+    )
+    parser.add_argument(
         "--timesteps", type=int, default=None,
         help="Custom training timesteps (overrides --quick/--medium)"
     )
@@ -266,30 +270,67 @@ def main():
     # Phase 1: Training
     # ------------------------------------------------------------------
     if not args.eval_only:
-        from train import train_both_models
+        from train import train_model
+        from sb3_contrib import MaskablePPO
 
-        print(f"\n  Training with {total_timesteps:,} timesteps per model...")
+        print(f"\n  Training requested for: {args.train_model.upper()}")
         print(f"  n_envs: {args.n_envs} | Device: {args.device} | Seed: {args.seed}\n")
 
-        train_results = train_both_models(
-            total_timesteps=total_timesteps,
-            save_dir=save_dir,
-            log_dir=log_dir,
-            seed=args.seed,
-            device=args.device,
-            n_envs=args.n_envs,
-            model_a_params=model_a_params,
-            model_b_params=model_b_params,
-            shared_params=shared_params,
-            eval_during_training=not args.no_eval_callback,
-        )
+        model_a = None
+        model_b = None
+        callback_a = None
+        callback_b = None
+        eval_callback_a = None
+        eval_callback_b = None
 
-        model_a = train_results["model_a"]
-        model_b = train_results["model_b"]
-        callback_a = train_results["callback_a"]
-        callback_b = train_results["callback_b"]
-        eval_callback_a = train_results.get("eval_callback_a")
-        eval_callback_b = train_results.get("eval_callback_b")
+        model_a_path = os.path.join(save_dir, "model_a_explicit.zip")
+        model_b_path = os.path.join(save_dir, "model_b_implicit.zip")
+
+        # --- Train or Load Model A ---
+        if args.train_model in ["both", "a"]:
+            print(f"  Training Model A (Explicit)...")
+            model_a, callback_a, eval_callback_a = train_model(
+                model_name="model_a_explicit",
+                use_implicit=False,
+                total_timesteps=total_timesteps,
+                save_dir=save_dir,
+                log_dir=log_dir,
+                seed=args.seed,
+                device=args.device,
+                n_envs=args.n_envs,
+                eval_during_training=not args.no_eval_callback,
+                **{**shared_params, **model_a_params},
+            )
+        else:
+            print(f"  Skipping Model A training. Loading existing...")
+            if os.path.exists(model_a_path):
+                model_a = MaskablePPO.load(model_a_path)
+            else:
+                print(f"  ERROR: Model A not found at {model_a_path}. Train it first.")
+                sys.exit(1)
+
+        # --- Train or Load Model B ---
+        if args.train_model in ["both", "b"]:
+            print(f"  Training Model B (Implicit)...")
+            model_b, callback_b, eval_callback_b = train_model(
+                model_name="model_b_implicit",
+                use_implicit=True,
+                total_timesteps=total_timesteps,
+                save_dir=save_dir,
+                log_dir=log_dir,
+                seed=args.seed + 1,
+                device=args.device,
+                n_envs=args.n_envs,
+                eval_during_training=not args.no_eval_callback,
+                **{**shared_params, **model_b_params},
+            )
+        else:
+            print(f"  Skipping Model B training. Loading existing...")
+            if os.path.exists(model_b_path):
+                model_b = MaskablePPO.load(model_b_path)
+            else:
+                print(f"  ERROR: Model B not found at {model_b_path}. Train it first.")
+                sys.exit(1)
 
     else:
         print("\n  Loading saved models...\n")

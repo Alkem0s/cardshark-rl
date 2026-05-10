@@ -300,10 +300,12 @@ def train_model(
 
     # Train
     start_time = time.time()
+    log_interval = max(1, 50000 // (n_steps * n_envs))
     model.learn(
         total_timesteps=total_timesteps,
         callback=CallbackList(callbacks),
         progress_bar=True,
+        log_interval=log_interval,
     )
     elapsed = time.time() - start_time
 
