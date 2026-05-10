@@ -2,8 +2,7 @@
 hpo.py — Optuna-based hyperparameter optimisation for CardShark-RL.
 
 Searches over PPO hyperparameters using a shortened training budget
-(300K steps) and evaluates a weighted BB/100 objective that penalises
-Rock weakness.
+(300K steps) and evaluates a maximin objective that maximizes the minimum BB/100 across opponents.
 
 Can run HPO for Model A (explicit), Model B (implicit), or both.
 
@@ -174,12 +173,12 @@ class TrialEvalCallback(BaseCallback):
 
             eval_time = time.time() - eval_start
 
-            score = _weighted_bb(per_opp)
+            score = min(per_opp.values())
 
             print(
                 f"[Trial {self.trial.number}] "
                 f"EVAL DONE in {eval_time:.1f}s | "
-                f"weighted={score:+.2f} | "
+                f"min_bb={score:+.2f} | "
                 + " | ".join(f"{k}={v:+.1f}" for k, v in per_opp.items()),
                 flush=True,
             )
@@ -239,28 +238,6 @@ def create_objective(
             log=True,
         )
 
-        n_steps = trial.suggest_categorical(
-            "n_steps",
-            [1024],
-        )
-
-        batch_size = trial.suggest_categorical(
-            "batch_size",
-            [32, 64],
-        )
-
-        n_epochs = trial.suggest_int(
-            "n_epochs",
-            5,
-            12,
-        )
-
-        gamma = trial.suggest_float(
-            "gamma",
-            0.95,
-            0.98,
-        )
-
         ent_coef = trial.suggest_float(
             "ent_coef",
             0.002,
@@ -272,12 +249,6 @@ def create_objective(
             "clip_range",
             0.15,
             0.25,
-        )
-
-        gae_lambda = trial.suggest_float(
-            "gae_lambda",
-            0.9,
-            0.98,
         )
 
         vf_coef = trial.suggest_float(
@@ -301,44 +272,43 @@ def create_objective(
         steal_bonus = trial.suggest_float(
             "steal_bonus",
             0.1,
-            0.3,
+            0.5,
         )
 
-        lr_schedule = trial.suggest_categorical(
-            "lr_schedule",
-            ["linear", "constant"],
-        )
+        if use_implicit:
+            # Model B Search Space (Implicit)
+            n_steps = trial.suggest_categorical("n_steps", [2048])
+            batch_size = trial.suggest_categorical("batch_size", [64, 128, 256])
+            n_epochs = trial.suggest_int("n_epochs", 5, 12)
+            gamma = trial.suggest_float("gamma", 0.98, 1.0)
+            gae_lambda = trial.suggest_float("gae_lambda", 0.9, 0.98)
+            
+            lr_schedule = trial.suggest_categorical("lr_schedule", ["linear"])
+            rolling_window = trial.suggest_categorical("rolling_window", [20, 50, 100])
+            block_size = trial.suggest_categorical("block_size", [400])
+            
+            n_layers = trial.suggest_int("n_layers", 4, 4)
+            layer_size = trial.suggest_categorical("layer_size", [256])
+            
+            hybrid_switch_episodes_frac = trial.suggest_float("hybrid_switch_episodes_frac", 0.7, 1.0)
+        else:
+            # Model A Search Space (Explicit)
+            n_steps = trial.suggest_categorical("n_steps", [2048, 4096])
+            batch_size = trial.suggest_categorical("batch_size", [32, 64])
+            n_epochs = trial.suggest_int("n_epochs", 15, 25)
+            gamma = trial.suggest_float("gamma", 0.95, 0.98)
+            gae_lambda = trial.suggest_float("gae_lambda", 0.85, 0.95)
+            
+            lr_schedule = trial.suggest_categorical("lr_schedule", ["linear", "constant"])
+            rolling_window = trial.suggest_categorical("rolling_window", [5, 10, 20])
+            block_size = trial.suggest_categorical("block_size", [50, 100, 200])
+            
+            n_layers = trial.suggest_int("n_layers", 2, 3)
+            layer_size = trial.suggest_categorical("layer_size", [128, 256])
+            
+            hybrid_switch_episodes_frac = trial.suggest_float("hybrid_switch_episodes_frac", 0.1, 0.9)
 
-        rolling_window = trial.suggest_categorical(
-            "rolling_window",
-            [20, 50, 100],
-        )
-
-        block_size = trial.suggest_categorical(
-            "block_size",
-            [200, 400],
-        )
-
-        hybrid_switch_episodes_frac = trial.suggest_categorical(
-            "hybrid_switch_episodes_frac",
-            [0.6, 0.75, 0.9],
-        )
-        hybrid_switch_ep = int(hybrid_switch_episodes_frac * (timesteps // 3))
-
-        # ------------------------------------------------------------------
-        # Network architecture
-        # ------------------------------------------------------------------
-
-        n_layers = trial.suggest_int(
-            "n_layers",
-            3,
-            4,
-        )
-
-        layer_size = trial.suggest_categorical(
-            "layer_size",
-            [256],
-        )
+        hybrid_switch_ts = int(hybrid_switch_episodes_frac * timesteps)
 
         net_arch = [layer_size] * n_layers
         opponent_schedule = "hybrid"
@@ -358,14 +328,13 @@ def create_objective(
         clip_range: {clip_range:.3f} | gae_lambda: {gae_lambda:.3f}
         vf_coef: {vf_coef:.3f} | max_grad_norm: {max_grad_norm:.3f}
         fold_penalty: {fold_penalty:.3f} | steal_bonus: {steal_bonus:.3f}
+        rolling_window: {rolling_window} | block_size: {block_size}
+        switch_frac: {hybrid_switch_episodes_frac:.3f} | switch_ts: {hybrid_switch_ts}
         net_arch: {net_arch}
         ============================================================
         """
 
         print(trial_header, flush=True)
-                
-        if use_implicit:
-            print(f"  rolling_window: {rolling_window} | block_size: {block_size}")
 
         # ------------------------------------------------------------------
         # Build vectorized environment
@@ -381,7 +350,7 @@ def create_objective(
                     rng_seed=env_seed,
                     opponent_schedule=opponent_schedule,
                     block_size=block_size,
-                    hybrid_switch_episodes=hybrid_switch_ep,
+                    hybrid_switch_timesteps=hybrid_switch_ts,
                     fold_penalty=fold_penalty,
                     steal_bonus=steal_bonus,
                 )
@@ -482,7 +451,7 @@ def create_objective(
         print(f"  weighted={weighted:+.2f}, min={min_bb:+.2f}")
 
         env.close()
-        return weighted
+        return min_bb
 
     return objective
 
@@ -520,7 +489,7 @@ def run_hpo_single(
     logger.info(f"Trials: {n_trials}")
     logger.info(f"Steps per trial: {timesteps_per_trial:,}")
     logger.info(f"Eval hands: {eval_hands:,}")
-    logger.info(f"Objective: weighted BB/100 (Rock×0.5, Station×0.25, Maniac×0.25)")
+    logger.info(f"Objective: Maximin (maximize minimum BB/100 across opponents)")
     logger.info(f"Seed: {seed} | Device: {device} | n_envs: {n_envs} | n_jobs: {n_jobs}")
     logger.info("")
 
@@ -554,7 +523,7 @@ def run_hpo_single(
     logger.info(f"HPO COMPLETE — {len(study.trials)} trials")
     logger.info(f"{'='*60}")
     logger.info("")
-    logger.info(f"{'Trial':>6} {'Status':>10} {'Weighted BB':>13}  Parameters")
+    logger.info(f"{'Trial':>6} {'Status':>10} {'Min BB':>13}  Parameters")
     logger.info(f"{'-'*80}")
     for t in sorted(study.trials, key=lambda x: x.value if x.value is not None else -9999, reverse=True):
         status = t.state.name
@@ -564,7 +533,7 @@ def run_hpo_single(
 
     best = study.best_trial
     logger.info("")
-    logger.info(f"BEST Trial #{best.number}: weighted BB/100 = {best.value:+.2f}")
+    logger.info(f"BEST Trial #{best.number}: min BB/100 = {best.value:+.2f}")
     logger.info("Best params:")
     for k, v in best.params.items():
         logger.info(f"  {k}: {v}")
@@ -580,7 +549,7 @@ def run_hpo_single(
     # Handle hybrid_switch_episodes_frac (implicit only)
     if "hybrid_switch_episodes_frac" in best_params:
         frac = best_params.pop("hybrid_switch_episodes_frac")
-        best_params["hybrid_switch_episodes"] = int(frac * (timesteps_per_trial // 3))
+        best_params["hybrid_switch_timesteps"] = int(frac * timesteps_per_trial)
 
     # Ensure batch_size <= n_steps
     if best_params["batch_size"] > best_params["n_steps"]:

@@ -44,7 +44,7 @@ class DrawPokerGymEnv(gym.Env):
         rng_seed: int | None = None,
         opponent_schedule: str = "random",
         block_size: int = 200,
-        hybrid_switch_episodes: int | None = None,
+        hybrid_switch_timesteps: int | None = None,
         # Reward shaping — tunable via HPO
         fold_penalty: float = 0.3,
         steal_bonus: float = 0.2,
@@ -67,7 +67,7 @@ class DrawPokerGymEnv(gym.Env):
             rng_seed=rng_seed,
             opponent_schedule=opponent_schedule,
             block_size=block_size,
-            hybrid_switch_episodes=hybrid_switch_episodes,
+            hybrid_switch_timesteps=hybrid_switch_timesteps,
         )
 
         # Determine obs size
@@ -217,7 +217,7 @@ def make_env(
     seed: int = 0,
     opponent_schedule: str = "random",
     block_size: int = 200,
-    hybrid_switch_episodes: int | None = None,
+    hybrid_switch_timesteps: int | None = None,
     fold_penalty: float = 0.3,
     steal_bonus: float = 0.2,
 ):
@@ -230,7 +230,7 @@ def make_env(
             rng_seed=seed,
             opponent_schedule=opponent_schedule,
             block_size=block_size,
-            hybrid_switch_episodes=hybrid_switch_episodes,
+            hybrid_switch_timesteps=hybrid_switch_timesteps,
             fold_penalty=fold_penalty,
             steal_bonus=steal_bonus,
         )

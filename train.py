@@ -149,7 +149,7 @@ def train_model(
     rolling_window: int | None = None,
     opponent_schedule: str | None = None,
     block_size: int = 200,
-    hybrid_switch_episodes: int | None = None,
+    hybrid_switch_timesteps: int | None = None,
     fold_penalty: float = 0.3,
     steal_bonus: float = 0.2,
     n_envs: int = 1,
@@ -197,9 +197,9 @@ def train_model(
         rolling_window = 50 if use_implicit else 50
     if opponent_schedule is None:
         opponent_schedule = "hybrid"
-        if hybrid_switch_episodes is None:
-            # Switch halfway through training (approx episodes = timesteps/3 steps avg)
-            hybrid_switch_episodes = total_timesteps // 3
+        if hybrid_switch_timesteps is None:
+            # Switch halfway through training
+            hybrid_switch_timesteps = total_timesteps // 2
 
     os.makedirs(save_dir, exist_ok=True)
     os.makedirs(log_dir, exist_ok=True)
@@ -233,7 +233,7 @@ def train_model(
                 seed=env_seed,
                 opponent_schedule=opponent_schedule,
                 block_size=block_size,
-                hybrid_switch_episodes=hybrid_switch_episodes,
+                hybrid_switch_timesteps=hybrid_switch_timesteps,
                 fold_penalty=fold_penalty,
                 steal_bonus=steal_bonus,
             )()  # call the inner closure to get the raw DrawPokerGymEnv

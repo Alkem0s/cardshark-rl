@@ -77,7 +77,7 @@ class DrawPokerEnv(AECEnv):
         rng_seed: int | None = None,
         opponent_schedule: str = "random",
         block_size: int = 200,
-        hybrid_switch_episodes: int | None = None,
+        hybrid_switch_timesteps: int | None = None,
     ):
         super().__init__()
 
@@ -87,10 +87,11 @@ class DrawPokerEnv(AECEnv):
         self.render_mode = render_mode
         self.opponent_schedule = opponent_schedule  # "random", "block", or "hybrid"
         self.block_size = block_size
-        self.hybrid_switch_episodes = hybrid_switch_episodes
+        self.hybrid_switch_timesteps = hybrid_switch_timesteps
 
         # Block / hybrid scheduling state
         self._block_hand_count = 0
+        self._total_steps = 0
         self._total_episodes = 0
         self._block_current_opp_id = 0
 
@@ -193,8 +194,8 @@ class DrawPokerEnv(AECEnv):
         self._total_episodes += 1
 
         # Determine effective schedule for this episode
-        if self.opponent_schedule == "hybrid" and self.hybrid_switch_episodes:
-            effective_schedule = "block" if self._total_episodes <= self.hybrid_switch_episodes else "random"
+        if self.opponent_schedule == "hybrid" and self.hybrid_switch_timesteps:
+            effective_schedule = "block" if self._total_steps <= self.hybrid_switch_timesteps else "random"
         else:
             effective_schedule = self.opponent_schedule
 
@@ -262,6 +263,7 @@ class DrawPokerEnv(AECEnv):
 
     def step(self, action):
         """Process an action for the current agent."""
+        self._total_steps += 1
         agent = self.agent_selection
 
         if self.terminations.get(agent, False) or self.truncations.get(agent, False):

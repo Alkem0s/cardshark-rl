@@ -1,23 +1,24 @@
 {
-  "learning_rate": 0.0004521919975710127,
-  "n_steps": 1024,
+  "learning_rate": 0.00020929424642066348,
+  "n_steps": 2048,
   "batch_size": 64,
   "n_epochs": 7,
-  "gamma": 0.9535072603052953,
-  "ent_coef": 0.002543402526335391,
-  "clip_range": 0.17914029741732307,
-  "gae_lambda": 0.9682012829377772,
-  "vf_coef": 0.46343175512606843,
-  "max_grad_norm": 0.6287996243734179,
-  "fold_penalty": 0.2922614562381933,
-  "steal_bonus": 0.10379218972055414,
+  "gamma": 0.9945195786653828,
+  "ent_coef": 0.007302466677496596,
+  "clip_range": 0.2304854748498268,
+  "gae_lambda": 0.9334484929595707,
+  "vf_coef": 0.4123785002096272,
+  "max_grad_norm": 0.32638088098960927,
+  "fold_penalty": 0.29965303770608925,
+  "steal_bonus": 0.2863466485582109,
   "lr_schedule": "linear",
-  "rolling_window": 20,
-  "block_size": 200,
-  "hybrid_switch_episodes": 300000,
+  "rolling_window": 50,
+  "block_size": 400,
   "net_arch": [
     256,
     256,
+    256,
     256
-  ]
+  ],
+  "hybrid_switch_timesteps": 298922
 }
