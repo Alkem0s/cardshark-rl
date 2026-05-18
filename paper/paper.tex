@@ -457,30 +457,30 @@ learned genuine strategic depth or is merely farming easy wins
 against passive opponents.
 
 \begin{table}[htbp]
-\caption{Best Hyperparameters for Model A (Baseline) and Model B (Optimized)}
+\caption{Best Hyperparameters for Model A (Explicit) and Model B (Implicit)}
 \label{tab:best_params}
 \centering
 \begin{tabular}{lll}
 \toprule
-\textbf{Hyperparameter} & \textbf{Model A (Baseline)} & \textbf{Model B (Optimized)} \\
+\textbf{Hyperparameter} & \textbf{Model A (Explicit)} & \textbf{Model B (Implicit)} \\
 \midrule
-learning\_rate      & $3 \times 10^{-4}$ & $1.045 \times 10^{-4}$ \\
-n\_steps            & 1024 & 2048 \\
-batch\_size         & 128 & 32 \\
-n\_epochs           & 10 & 23 \\
-gamma               & 1.0 & 0.9831 \\
-ent\_coef           & 0.01 & 0.00416 \\
-clip\_range         & 0.2 & 0.1341 \\
-gae\_lambda         & 0.95 & 0.9020 \\
-vf\_coef            & 0.5 & 0.7069 \\
-max\_grad\_norm     & 0.5 & 0.7571 \\
-fold\_penalty       & 0.3 & 0.296 \\
-steal\_bonus        & 0.2 & 0.448 \\
-lr\_schedule        & linear & linear \\
-net\_arch           & [256, 256, 256] & [256, 256, 256, 256] \\
-rolling\_window $W$ & N/A & 10 \\
-block\_size $B$     & N/A & 100 \\
-hybrid\_switch $H$  & N/A & 100{,}000 episodes \\
+learning\_rate      & $1.63 \times 10^{-4}$ & $3.50 \times 10^{-4}$ \\
+n\_steps            & 4096 & 2048 \\
+batch\_size         & 32 & 64 \\
+n\_epochs           & 22 & 11 \\
+gamma               & 0.9658 & 0.9894 \\
+ent\_coef           & 0.00103 & 0.00457 \\
+clip\_range         & 0.242 & 0.194 \\
+gae\_lambda         & 0.874 & 0.922 \\
+vf\_coef            & 0.475 & 0.430 \\
+max\_grad\_norm     & 0.484 & 0.464 \\
+fold\_penalty       & 0.379 & 0.328 \\
+steal\_bonus        & 0.492 & 0.212 \\
+lr\_schedule        & constant & linear \\
+net\_arch           & [128, 128] & [256, 256, 256, 256] \\
+rolling\_window $W$ & N/A & 50 \\
+block\_size $B$     & N/A & 400 \\
+hybrid\_switch $H$  & N/A & 972{,}000 steps \\
 \bottomrule
 \end{tabular}
 \end{table}

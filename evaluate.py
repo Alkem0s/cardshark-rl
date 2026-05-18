@@ -351,3 +351,166 @@ def print_summary_table(results: dict):
         f"  {'AVERAGE':<18} {avg_a:>+9.2f}      {avg_b:>+9.2f}      {avg_r:>+9.2f}"
     )
     print(f"\n{'='*70}\n")
+
+
+# ---------------------------------------------------------------------------
+# Non-Stationary Adaptation & Statistical Significance
+# ---------------------------------------------------------------------------
+
+def run_non_stationary_tournament(
+    model: MaskablePPO,
+    use_implicit: bool,
+    opponent_sequence: list[int],
+    seed: int = 0,
+    blind_opponent_id: int | None = None,
+) -> dict:
+    """Run a tournament where the opponent archetype shifts mid-session.
+
+    Tracks the hand-by-hand rewards, rolling stats, and true opponent ID.
+    If blind_opponent_id is provided, forces Model A to see that static one-hot opponent ID.
+    """
+    env = DrawPokerGymEnv(
+        use_implicit_modeling=use_implicit,
+        opponent_id=opponent_sequence[0],
+        rolling_window=50,
+        rng_seed=seed,
+    )
+
+    # Warm up rolling stats for implicit model (play 50 random hands first)
+    if use_implicit:
+        for _ in range(50):
+            obs, info = env.reset()
+            done = False
+            while not done:
+                mask = env.action_mask()
+                valid = np.where(mask == 1)[0]
+                action = int(np.random.choice(valid))
+                obs, reward, terminated, truncated, info = env.step(action)
+                done = terminated or truncated
+        env.clear_post_draw_actions()
+
+    hand_rewards = []
+    rolling_stats_history = []
+    true_opponent_ids = []
+
+    for hand_idx, opp_id in enumerate(opponent_sequence):
+        # Force opponent transition
+        env._env.fixed_opponent_id = opp_id
+
+        obs, info = env.reset()
+        done = False
+        episode_reward = 0.0
+
+        true_opponent_ids.append(opp_id)
+
+        while not done:
+            mask = env.action_mask()
+
+            # Handle blind condition for Model A (Explicit)
+            if not use_implicit and blind_opponent_id is not None:
+                # Obs size is 26. Last 3 elements are one-hot opponent ID.
+                obs[-3:] = 0.0
+                obs[-3 + blind_opponent_id] = 1.0
+
+            action, _ = model.predict(obs, action_masks=mask, deterministic=True)
+            action = int(action)
+            obs, reward, terminated, truncated, info = env.step(action)
+            episode_reward += reward
+            done = terminated or truncated
+
+        hand_rewards.append(episode_reward)
+
+        if use_implicit:
+            stats = env._env._get_rolling_stats()
+            rolling_stats_history.append(stats)
+        else:
+            rolling_stats_history.append([0.0] * 10)
+
+    env.close()
+    return {
+        "hand_rewards": hand_rewards,
+        "rolling_stats_history": rolling_stats_history,
+        "true_opponent_ids": true_opponent_ids,
+    }
+
+
+def compute_statistical_significance(
+    profits_b: list[float],
+    profits_a: list[float],
+    profits_r: list[float],
+) -> dict:
+    """Perform paired t-test and Wilcoxon signed-rank tests between model profits.
+
+    Returns a dict with statistics and p-values.
+    """
+    results = {}
+    n = len(profits_b)
+
+    # Paired t-tests & Wilcoxon tests
+    try:
+        from scipy import stats
+
+        # Model B vs Model A
+        t_stat_ba, p_val_ba = stats.ttest_rel(profits_b, profits_a)
+        res_wilc_ba = stats.wilcoxon(profits_b, profits_a)
+
+        # Model B vs Random
+        t_stat_br, p_val_br = stats.ttest_rel(profits_b, profits_r)
+        res_wilc_br = stats.wilcoxon(profits_b, profits_r)
+
+        results["scipy_available"] = True
+        results["ba_t_stat"] = float(t_stat_ba)
+        results["ba_t_p"] = float(p_val_ba)
+        results["ba_w_stat"] = float(res_wilc_ba.statistic)
+        results["ba_w_p"] = float(res_wilc_ba.pvalue)
+
+        results["br_t_stat"] = float(t_stat_br)
+        results["br_t_p"] = float(p_val_br)
+        results["br_w_stat"] = float(res_wilc_br.statistic)
+        results["br_w_p"] = float(res_wilc_br.pvalue)
+
+    except (ImportError, ValueError):
+        # Graceful manual numpy fallback for t-test (in case scipy is missing or has tie issues)
+        results["scipy_available"] = False
+
+        def _manual_paired_t(x, y):
+            d = np.array(x) - np.array(y)
+            mean_d = np.mean(d)
+            std_d = np.std(d, ddof=1)
+            if std_d == 0:
+                return 0.0, 1.0
+            t_stat = mean_d / (std_d / np.sqrt(len(d)))
+            # Approximate two-tailed p-value using standard normal approximation
+            from math import erf, sqrt
+            p_val = 2 * (1 - 0.5 * (1 + erf(abs(t_stat) / sqrt(2))))
+            return t_stat, p_val
+
+        t_ba, p_ba = _manual_paired_t(profits_b, profits_a)
+        t_br, p_br = _manual_paired_t(profits_b, profits_r)
+
+        results["ba_t_stat"] = float(t_ba)
+        results["ba_t_p"] = float(p_ba)
+        results["ba_w_stat"] = 0.0
+        results["ba_w_p"] = 1.0
+
+        results["br_t_stat"] = float(t_br)
+        results["br_t_p"] = float(p_br)
+        results["br_w_stat"] = 0.0
+        results["br_w_p"] = 1.0
+
+    # 95% Confidence Interval for Model B hand profit and BB/100
+    mean_b = np.mean(profits_b)
+    std_b = np.std(profits_b, ddof=1)
+    margin_error = 1.96 * (std_b / np.sqrt(n))
+
+    results["b_mean_profit"] = float(mean_b)
+    results["b_profit_ci_lower"] = float(mean_b - margin_error)
+    results["b_profit_ci_upper"] = float(mean_b + margin_error)
+
+    # BB/100 confidence interval is the profit confidence interval multiplied by 100
+    results["b_bb_mean"] = float(mean_b * 100)
+    results["b_bb_ci_lower"] = float((mean_b - margin_error) * 100)
+    results["b_bb_ci_upper"] = float((mean_b + margin_error) * 100)
+
+    return results
+

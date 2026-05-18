@@ -39,7 +39,14 @@ def make_run_dir(base: str = "results") -> str:
     return run_dir
 
 
-def save_run_info(run_dir: str, args, total_timesteps: int, results: dict | None = None):
+def save_run_info(
+    run_dir: str,
+    args,
+    total_timesteps: int,
+    results: dict | None = None,
+    sig_results: dict | None = None,
+    non_stationary_results: tuple | None = None,
+):
     """Save run metadata to a text file inside the run directory."""
     info_path = os.path.join(run_dir, "run_info.txt")
     with open(info_path, "w") as f:
@@ -47,6 +54,7 @@ def save_run_info(run_dir: str, args, total_timesteps: int, results: dict | None
         f.write(f"{'='*60}\n")
         f.write(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write(f"Timesteps per model: {total_timesteps:,}\n")
+        f.write(f"Training seeds: {args.train_seeds}\n")
         f.write(f"Eval hands: {args.eval_hands:,}\n")
         f.write(f"Eval seeds: {args.eval_seeds}\n")
         f.write(f"n_envs: {args.n_envs}\n")
@@ -78,7 +86,29 @@ def save_run_info(run_dir: str, args, total_timesteps: int, results: dict | None
             f.write(f"{'-'*62}\n")
             f.write(f"{'AVERAGE':<18} {avg_a:>+9.2f}      {avg_b:>+9.2f}      {avg_r:>+9.2f}\n")
 
+        if sig_results:
+            n_total = len(args.train_seeds) * len(args.eval_seeds) * args.eval_hands * len(OPP_NAMES)
+            f.write(f"\nStatistical Validation (Pooled over {n_total:,} hands):\n")
+            f.write(f"{'='*60}\n")
+            f.write(f"Model B vs Model A (Paired t-test):  t = {sig_results['ba_t_stat']:+.3f}, p = {sig_results['ba_t_p']:.3e}\n")
+            f.write(f"Model B vs Random (Paired t-test):   t = {sig_results['br_t_stat']:+.3f}, p = {sig_results['br_t_p']:.3e}\n")
+            if sig_results.get("scipy_available"):
+                f.write(f"Model B vs Model A (Wilcoxon):      W = {sig_results['ba_w_stat']:.1f}, p = {sig_results['ba_w_p']:.3e}\n")
+                f.write(f"Model B vs Random (Wilcoxon):       W = {sig_results['br_w_stat']:.1f}, p = {sig_results['br_w_p']:.3e}\n")
+            f.write(f"\nModel B 95% Confidence Intervals:\n")
+            f.write(f"  Average profit/hand: {sig_results['b_mean_profit']:+.4f} chips  [95% CI: {sig_results['b_profit_ci_lower']:.4f}, {sig_results['b_profit_ci_upper']:.4f}]\n")
+            f.write(f"  Average BB/100 hands: {sig_results['b_bb_mean']:+.2f} BB      [95% CI: {sig_results['b_bb_ci_lower']:.2f}, {sig_results['b_bb_ci_upper']:.2f}]\n")
+
+        if non_stationary_results:
+            res_implicit, res_oracle, res_blind = non_stationary_results
+            f.write(f"\nNon-Stationary Adaptation Tournament (1,500 hands):\n")
+            f.write(f"{'='*60}\n")
+            f.write(f"Model B (Implicit):         {np.mean(res_implicit['hand_rewards'])*100:+.2f} BB/100\n")
+            f.write(f"Model A (Explicit Oracle):  {np.mean(res_oracle['hand_rewards'])*100:+.2f} BB/100\n")
+            f.write(f"Model A (Explicit Blind):   {np.mean(res_blind['hand_rewards'])*100:+.2f} BB/100\n")
+
     print(f"  Saved: {info_path}")
+
 
 
 def update_latest(run_dir: str, base: str = "results"):
@@ -183,6 +213,10 @@ def main():
              "Example: --eval-seeds 0 1 2"
     )
     parser.add_argument(
+        "--train-seeds", type=int, nargs="+", default=None,
+        help="RNG seeds for multi-seed training (default: 3 seeds [42, 142, 242] for medium/standard, 1 seed for quick)"
+    )
+    parser.add_argument(
         "--device", type=str, default="auto",
         help="Training device: 'auto', 'cpu', or 'cuda'"
     )
@@ -203,6 +237,13 @@ def main():
     # Default eval seeds: 3-seed evaluation unless overridden
     if args.eval_seeds is None:
         args.eval_seeds = [args.seed, args.seed + 100, args.seed + 200]
+
+    # Default train seeds: 3 seeds for scientific rigor, 1 seed for quick runs to save time
+    if args.train_seeds is None:
+        if args.quick:
+            args.train_seeds = [args.seed]
+        else:
+            args.train_seeds = [args.seed, args.seed + 100, args.seed + 200]
 
     # Determine timesteps
     if args.timesteps:
@@ -269,89 +310,60 @@ def main():
     # ------------------------------------------------------------------
     # Phase 1: Training
     # ------------------------------------------------------------------
+    all_callbacks_a = []
+    all_callbacks_b = []
+    all_eval_callbacks_a = []
+    all_eval_callbacks_b = []
+
     if not args.eval_only:
         from train import train_model
         from sb3_contrib import MaskablePPO
 
         print(f"\n  Training requested for: {args.train_model.upper()}")
-        print(f"  n_envs: {args.n_envs} | Device: {args.device} | Seed: {args.seed}\n")
+        print(f"  n_envs: {args.n_envs} | Device: {args.device} | Seeds: {args.train_seeds}\n")
 
-        model_a = None
-        model_b = None
-        callback_a = None
-        callback_b = None
-        eval_callback_a = None
-        eval_callback_b = None
+        for s in args.train_seeds:
+            print(f"\n  ==================================================")
+            print(f"  >>> TRAINING SEED {s} <<<")
+            print(f"  ==================================================")
 
-        model_a_path = os.path.join(save_dir, "model_a_explicit.zip")
-        model_b_path = os.path.join(save_dir, "model_b_implicit.zip")
+            # --- Train Model A ---
+            if args.train_model in ["both", "a"]:
+                print(f"  Training Model A (Explicit) Seed {s}...")
+                model_a, callback_a, eval_callback_a = train_model(
+                    model_name=f"model_a_explicit_seed{s}",
+                    use_implicit=False,
+                    total_timesteps=total_timesteps,
+                    save_dir=save_dir,
+                    log_dir=log_dir,
+                    seed=s,
+                    device=args.device,
+                    n_envs=args.n_envs,
+                    eval_during_training=not args.no_eval_callback,
+                    **{**shared_params, **model_a_params},
+                )
+                all_callbacks_a.append(callback_a)
+                all_eval_callbacks_a.append(eval_callback_a)
 
-        # --- Train or Load Model A ---
-        if args.train_model in ["both", "a"]:
-            print(f"  Training Model A (Explicit)...")
-            model_a, callback_a, eval_callback_a = train_model(
-                model_name="model_a_explicit",
-                use_implicit=False,
-                total_timesteps=total_timesteps,
-                save_dir=save_dir,
-                log_dir=log_dir,
-                seed=args.seed,
-                device=args.device,
-                n_envs=args.n_envs,
-                eval_during_training=not args.no_eval_callback,
-                **{**shared_params, **model_a_params},
-            )
-        else:
-            print(f"  Skipping Model A training. Loading existing...")
-            if os.path.exists(model_a_path):
-                model_a = MaskablePPO.load(model_a_path)
-            else:
-                print(f"  ERROR: Model A not found at {model_a_path}. Train it first.")
-                sys.exit(1)
-
-        # --- Train or Load Model B ---
-        if args.train_model in ["both", "b"]:
-            print(f"  Training Model B (Implicit)...")
-            model_b, callback_b, eval_callback_b = train_model(
-                model_name="model_b_implicit",
-                use_implicit=True,
-                total_timesteps=total_timesteps,
-                save_dir=save_dir,
-                log_dir=log_dir,
-                seed=args.seed + 1,
-                device=args.device,
-                n_envs=args.n_envs,
-                eval_during_training=not args.no_eval_callback,
-                **{**shared_params, **model_b_params},
-            )
-        else:
-            print(f"  Skipping Model B training. Loading existing...")
-            if os.path.exists(model_b_path):
-                model_b = MaskablePPO.load(model_b_path)
-            else:
-                print(f"  ERROR: Model B not found at {model_b_path}. Train it first.")
-                sys.exit(1)
-
+            # --- Train Model B ---
+            if args.train_model in ["both", "b"]:
+                print(f"  Training Model B (Implicit) Seed {s}...")
+                model_b, callback_b, eval_callback_b = train_model(
+                    model_name=f"model_b_implicit_seed{s}",
+                    use_implicit=True,
+                    total_timesteps=total_timesteps,
+                    save_dir=save_dir,
+                    log_dir=log_dir,
+                    seed=s + 1,
+                    device=args.device,
+                    n_envs=args.n_envs,
+                    eval_during_training=not args.no_eval_callback,
+                    **{**shared_params, **model_b_params},
+                )
+                all_callbacks_b.append(callback_b)
+                all_eval_callbacks_b.append(eval_callback_b)
     else:
-        print("\n  Loading saved models...\n")
-        from sb3_contrib import MaskablePPO
-
-        model_a_path = os.path.join(save_dir, "model_a_explicit.zip")
-        model_b_path = os.path.join(save_dir, "model_b_implicit.zip")
-
-        if not os.path.exists(model_a_path) or not os.path.exists(model_b_path):
-            print(f"  ERROR: Saved models not found in '{save_dir}/'")
-            print(f"  Run training first: python main.py")
-            sys.exit(1)
-
-        model_a = MaskablePPO.load(model_a_path)
-        model_b = MaskablePPO.load(model_b_path)
-        callback_a = None
-        callback_b = None
-        eval_callback_a = None
-        eval_callback_b = None
-        print(f"  Loaded Model A from {model_a_path}")
-        print(f"  Loaded Model B from {model_b_path}")
+        print("\n  Skip training requested (--eval-only). We will load models for each seed.\n")
 
     # ------------------------------------------------------------------
     # Phase 2: Evaluation
@@ -359,26 +371,129 @@ def main():
     from evaluate import (
         full_evaluation, compute_behavioral_matrix,
         print_behavioral_matrix, print_summary_table,
+        run_non_stationary_tournament, compute_statistical_significance,
     )
     from visualizer import (
         set_style, plot_architecture,
         plot_bb_comparison, plot_learning_curves,
         plot_behavioral_heatmap, plot_cumulative_profit,
+        plot_non_stationary_adaptation,
     )
+    import numpy as np
+    from sb3_contrib import MaskablePPO
 
     set_style()
+    n_train_seeds = len(args.train_seeds)
+    n_eval_seeds = len(args.eval_seeds)
+    print(f"\n  Running evaluation for {n_train_seeds} training seeds × {args.eval_hands:,} hands × {n_eval_seeds} eval seeds...\n")
 
-    n_seeds = len(args.eval_seeds)
-    print(f"\n  Running evaluation ({args.eval_hands:,} hands × {n_seeds} seeds)...\n")
+    all_eval_results = []
+    
+    first_model_a = None
+    first_model_b = None
 
-    eval_results = full_evaluation(
-        model_a=model_a,
-        model_b=model_b,
-        num_hands=args.eval_hands,
-        seed=args.seed,
-        results_dir=run_dir,
-        eval_seeds=args.eval_seeds,
+    for idx, s in enumerate(args.train_seeds):
+        print(f"\n  --- Evaluating Seed {s} ---")
+        
+        model_a_path = os.path.join(save_dir, f"model_a_explicit_seed{s}.zip")
+        model_b_path = os.path.join(save_dir, f"model_b_implicit_seed{s}.zip")
+        
+        # Fallback to standard names if seed-specific zip doesn't exist
+        if not os.path.exists(model_a_path):
+            model_a_path = os.path.join(save_dir, "model_a_explicit.zip")
+        if not os.path.exists(model_b_path):
+            model_b_path = os.path.join(save_dir, "model_b_implicit.zip")
+            
+        if not os.path.exists(model_a_path) or not os.path.exists(model_b_path):
+            print(f"  ERROR: Models not found for seed {s} or default names. Run training first.")
+            sys.exit(1)
+            
+        model_a_seed = MaskablePPO.load(model_a_path)
+        model_b_seed = MaskablePPO.load(model_b_path)
+        
+        if idx == 0:
+            first_model_a = model_a_seed
+            first_model_b = model_b_seed
+
+        res = full_evaluation(
+            model_a=model_a_seed,
+            model_b=model_b_seed,
+            num_hands=args.eval_hands,
+            seed=args.seed,
+            results_dir=run_dir,
+            eval_seeds=args.eval_seeds,
+        )
+        all_eval_results.append(res)
+
+    # Aggregate results across training seeds
+    print(f"\n  Aggregating evaluation results across {n_train_seeds} training seeds...")
+    
+    def aggregate_results(all_results: list[dict]) -> dict:
+        aggregated = {
+            "model_a": {},
+            "model_b": {},
+            "random": {},
+        }
+        from evaluate import OPP_NAMES
+        for model_key in ["model_a", "model_b", "random"]:
+            for opp in OPP_NAMES:
+                pooled_bb = []
+                pooled_profits = []
+                for res in all_results:
+                    pooled_bb.extend(res[model_key][opp]["bb_per_100_all"])
+                    pooled_profits.extend(res[model_key][opp]["hand_profits"])
+                aggregated[model_key][opp] = {
+                    "bb_per_100": float(np.mean(pooled_bb)),
+                    "bb_per_100_std": float(np.std(pooled_bb)) if len(pooled_bb) > 1 else 0.0,
+                    "bb_per_100_all": pooled_bb,
+                    "hand_profits": pooled_profits,
+                }
+                if model_key == "model_b":
+                    aggregated[model_key][opp]["post_draw_actions"] = all_results[0]["model_b"][opp].get("post_draw_actions", [])
+        return aggregated
+
+    eval_results = aggregate_results(all_eval_results)
+
+    # ------------------------------------------------------------------
+    # Non-Stationary Opponent Shift Adaptation Experiment
+    # ------------------------------------------------------------------
+    print(f"\n  Running Non-Stationary Opponent Shift Adaptation Experiment...")
+    # 1,500 hands: 500 CallingStation (0), 500 Maniac (1), 500 Rock (2)
+    opp_seq = [0] * 500 + [1] * 500 + [2] * 500
+    
+    print("    Model B (Implicit) evaluating...")
+    res_implicit = run_non_stationary_tournament(
+        first_model_b, use_implicit=True, opponent_sequence=opp_seq, seed=args.seed
     )
+    
+    print("    Model A (Explicit Oracle) evaluating...")
+    res_oracle = run_non_stationary_tournament(
+        first_model_a, use_implicit=False, opponent_sequence=opp_seq, seed=args.seed
+    )
+    
+    print("    Model A (Explicit Blind) evaluating...")
+    res_blind = run_non_stationary_tournament(
+        first_model_a, use_implicit=False, opponent_sequence=opp_seq, seed=args.seed, blind_opponent_id=0
+    )
+    
+    non_stationary_results = (res_implicit, res_oracle, res_blind)
+    print("    Adaptation experiment complete!")
+
+    # ------------------------------------------------------------------
+    # Statistical Significance Testing
+    # ------------------------------------------------------------------
+    print(f"\n  Computing statistical significance...")
+    from evaluate import OPP_NAMES
+    profits_b = []
+    profits_a = []
+    profits_r = []
+    for opp in OPP_NAMES:
+        profits_b.extend(eval_results["model_b"][opp]["hand_profits"])
+        profits_a.extend(eval_results["model_a"][opp]["hand_profits"])
+        profits_r.extend(eval_results["random"][opp]["hand_profits"])
+        
+    sig_results = compute_statistical_significance(profits_b, profits_a, profits_r)
+    print("    Statistical tests completed successfully!")
 
     # ------------------------------------------------------------------
     # Phase 3: Analysis & Plots
@@ -395,9 +510,10 @@ def main():
         save_path=os.path.join(run_dir, "bb_per_100_comparison.png"),
     )
 
-    if callback_a and callback_b:
+    if not args.eval_only:
+        # Plot training curves with shaded confidence regions
         plot_learning_curves(
-            callback_a, callback_b,
+            all_callbacks_a, all_callbacks_b,
             save_path=os.path.join(run_dir, "learning_curves.png"),
         )
 
@@ -411,17 +527,28 @@ def main():
         save_path=os.path.join(run_dir, "cumulative_profit.png"),
     )
 
+    # Dynamic network architecture plot based on Model B's actual MLP layout
+    net_arch_b = model_b_params.get("net_arch", [256, 256, 256, 256])
     plot_architecture(
+        net_arch=net_arch_b,
         save_path=os.path.join(run_dir, "architecture.png"),
     )
 
+    # Non-stationary adaptation plots
+    plot_non_stationary_adaptation(
+        res_implicit,
+        save_path=os.path.join(run_dir, "non_stationary_adaptation.png")
+    )
+
     # Save per-opponent training eval history if available
-    if eval_callback_a or eval_callback_b:
+    if len(all_eval_callbacks_a) > 0 or len(all_eval_callbacks_b) > 0:
+        eval_callback_a = all_eval_callbacks_a[0] if all_eval_callbacks_a else None
+        eval_callback_b = all_eval_callbacks_b[0] if all_eval_callbacks_b else None
         _save_training_eval_history(
             eval_callback_a, eval_callback_b, run_dir
         )
 
-    save_run_info(run_dir, args, total_timesteps, eval_results)
+    save_run_info(run_dir, args, total_timesteps, eval_results, sig_results, non_stationary_results)
     update_latest(run_dir, "results")
 
     # ------------------------------------------------------------------
