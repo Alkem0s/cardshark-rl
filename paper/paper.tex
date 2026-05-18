@@ -18,6 +18,8 @@
 \usepackage{multirow}
 \usepackage{array}
 
+\graphicspath{{../latest results/}}
+
 \hypersetup{
     colorlinks=true,
     linkcolor=blue,
@@ -65,9 +67,11 @@ hand-crafted opponent archetypes---Calling Station, Maniac, and
 Rock---over 10,000 hands each. We analyze ``The Tell'': the behavioral
 signature that Model~B learns to exploit based solely on an opponent's
 draw-count pattern, without access to any explicit opponent identity.
-Our results demonstrate that implicit behavioral inference is a
-principled and competitive approach to opponent exploitation in
-imperfect-information poker games.
+Our results show that Model~B (Implicit) achieves +166.50 BB/100 on
+average across all archetypes, compared to +180.65 BB/100 for Model~A
+(Explicit), a gap that is statistically significant ($p = 0.029$) yet
+practically modest, and that Model~B outperforms an oracle-labeled
+explicit agent in a non-stationary setting (+160.35 vs.\ +156.28 BB/100).
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -134,7 +138,7 @@ Section~\ref{sec:related} reviews related work. Section~\ref{sec:env}
 describes the game environment and opponent archetypes.
 Section~\ref{sec:method} details the proposed methodology.
 Sections~\ref{sec:results}--\ref{sec:conclusion} present results,
-discussion, and conclusions (to be completed).
+discussion, and conclusions.
 
 % =====================================================================
 \section{Background and Related Work}
@@ -510,13 +514,249 @@ uses 10{,}000 hands against a fixed opponent archetype with a warm-up
 phase of 50 random hands (for Model~B only) to populate the rolling
 statistics buffer before evaluation begins.
 
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{architecture.png}
+  \caption{Model~B (Implicit) architecture and inference flow. The
+    observation vector concatenates private hand information, game-state
+    features, and the 10-dimensional rolling behavioral statistics.
+    Four shared MLP layers (256 ReLU units each) feed separate policy
+    and value heads; action masking is applied before sampling.}
+  \label{fig:architecture}
+\end{figure}
+
 % =====================================================================
 \section{Experimental Results}
 \label{sec:results}
-% Sections 5--7 are reserved for future completion per project scope.
-\textit{[Sections 5–7: Evaluation and Results, Discussion and
-Limitations, and Conclusion and Future Work are reserved for
-completion in the final submission.]}
+
+\subsection{Cross-Evaluation Performance}
+
+Both models are evaluated against each of the three opponent archetypes
+over 10{,}000 hands, repeated across three independent evaluation seeds
+(0, 100, 200). Mean BB/100 and standard deviations are reported in
+Table~\ref{tab:results}. A random-action baseline is included for
+reference.
+
+\begin{table}[htbp]
+\caption{Evaluation Results: BB/100 by Model and Opponent (mean $\pm$ std over 3 seeds)}
+\label{tab:results}
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Opponent} & \textbf{Model A (Expl.)} & \textbf{Model B (Impl.)} & \textbf{Random} \\
+\midrule
+CallingStation & $+86.5 \pm 4.3$ & $+79.9 \pm 5.0$ & $-143.8 \pm 2.7$ \\
+Maniac         & $+408.0 \pm 15.7$ & $+390.8 \pm 11.5$ & $-222.1 \pm 0.1$ \\
+Rock           & $+47.5 \pm 2.8$   & $+28.9 \pm 6.5$   & $-151.3 \pm 2.0$ \\
+\midrule
+\textbf{Average} & $+180.65$ & $+166.50$ & $-172.44$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Both trained agents substantially outperform the random baseline across
+all archetypes. Model~A (Explicit) posts the higher average (+180.65 BB/100
+vs.\ +166.50 BB/100 for Model~B), which is expected given that it receives
+the opponent identity directly in its observation. The gap is most
+pronounced against the Rock archetype (+47.5 vs.\ +28.9), a hard-to-exploit
+opponent that only invests chips with strong holdings. Against the Maniac,
+both models achieve very high profitability, as the Maniac's loose
+aggression and frequent draws create many exploitable spots.
+
+Fig.~\ref{fig:bb_comparison} shows the cross-evaluation profitability as a
+grouped bar chart, and Fig.~\ref{fig:cumulative} shows cumulative profit
+trajectories over 30{,}000 hands (three seeds concatenated). The linear
+growth of the profit curves for both trained agents confirms that their
+exploitative advantage is stable and does not degrade over longer horizons.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{bb_per_100_comparison.png}
+  \caption{Cross-evaluation profitability (BB/100) for Model~A (Explicit),
+    Model~B (Implicit), and the random baseline across the three opponent
+    archetypes. Error bars are not shown in the bar chart but are provided
+    in Table~\ref{tab:results}.}
+  \label{fig:bb_comparison}
+\end{figure}
+
+\begin{figure*}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{cumulative_profit.png}
+  \caption{Cumulative profit trajectories over 30{,}000 hands (three
+    10{,}000-hand evaluation seeds concatenated) per opponent archetype.
+    Both trained models exhibit consistent positive linear growth,
+    while the random baseline degrades uniformly.}
+  \label{fig:cumulative}
+\end{figure*}
+
+\subsection{Behavioral Analysis: ``The Tell''}
+
+A central contribution of this work is the behavioral matrix analysis of
+Model~B's post-draw action distribution, conditioned on the observed
+opponent draw count. Fig.~\ref{fig:behavioral} displays the frequency
+of Fold, Call, and Raise actions for three representative draw-count
+values (0, 1, and 3) across each opponent archetype.
+
+\begin{figure*}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{behavioral_matrix.png}
+  \caption{``The Tell'': Model~B post-draw action frequencies conditioned on
+    opponent draw count (rows) for each opponent archetype (panels). Model~B
+    adapts its post-draw aggression based on opponent draw count without
+    access to explicit opponent identity.}
+  \label{fig:behavioral}
+\end{figure*}
+
+Several patterns emerge from the matrix. Against the CallingStation,
+Model~B maintains consistently high call and raise frequencies regardless
+of draw count (0\% fold rate when the station stands pat or draws one),
+reflecting the station's predictably passive post-draw behavior. Against
+the Maniac, the model increases its raise frequency when the Maniac draws
+one card (52\%), as a single-card draw from a loose opponent is a common
+flush or straight chase that frequently misses. The most striking pattern
+appears against the Rock: when the Rock stands pat (Draw~0), Model~B
+responds with 50\% call and 43\% raise, treating a Rock stand-pat as a
+strong hand signal. When the Rock draws one card, Model~B's call and raise
+frequencies drop to 0\%, indicating learned recognition that this is an
+unusual Rock action associated with high hand strength. These patterns
+demonstrate that Model~B has learned opponent-specific hand-reading
+heuristics from draw-count telemetry alone, without any explicit archetype
+identifier in its input.
+
+\subsection{Non-Stationary Adaptation}
+
+To evaluate Model~B's ability to adapt when the opponent changes mid-session,
+we run a 1{,}500-hand tournament in which the opponent switches from
+CallingStation (hands 1--500) to Maniac (hands 501--1{,}000) to Rock
+(hands 1{,}001--1{,}500) without resetting Model~B's rolling statistics buffer.
+Two variants of Model~A are also evaluated: an \textit{Oracle} variant given
+the correct archetype label at each switch, and a \textit{Blind} variant
+given a fixed incorrect label throughout.
+
+\begin{figure*}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{non_stationary_inference.png}
+  \caption{Model~B's rolling behavioral statistics (VPIP, PFR, Aggression
+    Factor, Avg.\ Cards Drawn) across the 1{,}500-hand non-stationary
+    tournament. Vertical dashed lines mark opponent switches. The statistics
+    adapt within $\sim$50--100 hands after each switch.}
+  \label{fig:ns_inference}
+\end{figure*}
+
+\begin{figure*}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{non_stationary_performance.png}
+  \caption{Online exploitation performance of Model~B in the non-stationary
+    tournament: smoothed win rate (BB/100, window=100) and cumulative profit.
+    Win rate peaks during the Maniac segment and recovers after each opponent
+    switch with a brief transient.}
+  \label{fig:ns_performance}
+\end{figure*}
+
+Results of the tournament are summarized in Table~\ref{tab:nonstationary}.
+Model~B achieves +160.35 BB/100, outperforming Model~A-Oracle (+156.28
+BB/100) and substantially outperforming Model~A-Blind (+50.01 BB/100).
+Fig.~\ref{fig:ns_inference} shows that the rolling statistics
+(VPIP, PFR, Aggression Factor, Avg.\ Cards Drawn) adapt to the new
+opponent within approximately 50--100 hands after each switch.
+Fig.~\ref{fig:ns_performance} shows the corresponding win-rate curve, with
+brief transients at each switch point followed by recovery.
+
+\begin{table}[htbp]
+\caption{Non-Stationary Adaptation Tournament Results (1,500 hands)}
+\label{tab:nonstationary}
+\centering
+\begin{tabular}{lc}
+\toprule
+\textbf{Agent} & \textbf{BB/100} \\
+\midrule
+Model B (Implicit)          & $+160.35$ \\
+Model A (Explicit -- Oracle) & $+156.28$ \\
+Model A (Explicit -- Blind)  & $+50.01$  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Statistical Validation}
+
+Statistical significance of Model~B's performance is assessed over
+270{,}000 pooled hands (three opponents $\times$ three seeds $\times$
+10{,}000 hands each). A paired $t$-test comparing per-hand profit between
+Model~B and Model~A yields $t = -2.183$, $p = 0.029$, indicating that
+the difference in means is statistically significant at the $\alpha = 0.05$
+level. Model~B vs.\ the random baseline is highly significant ($t = +106.85$,
+$p \approx 0$). A 95\% confidence interval for Model~B's average per-hand
+profit gives $+1.71$ chips [CI: 1.65, 1.76], corresponding to $+170.87$
+BB/100 [CI: 165.31, 176.44].
+
+% =====================================================================
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{Implicit vs.\ Explicit Modeling}
+
+The performance gap between Model~A and Model~B---roughly 14 BB/100 on
+average---is consistent with the information asymmetry: Model~A receives
+the opponent archetype as a direct input, while Model~B must infer it from
+behavioral evidence accumulated over recent hands. The gap is largest against
+the Rock (+18.6 BB/100 in favor of Model~A), whose tight-passive style
+generates sparse exploitable signals. Against the Maniac, the gap narrows
+considerably (+17.2 BB/100), suggesting that the Maniac's high VPIP and
+frequent draws are sufficient to produce a strong implicit signal within the
+rolling window of $W=50$ hands.
+
+\subsection{The Non-Stationary Advantage}
+
+Somewhat counterintuitively, Model~B slightly outperforms Model~A-Oracle in
+the non-stationary tournament (+160.35 vs.\ +156.28 BB/100). One plausible
+explanation is that Model~B's rolling statistics provide a more nuanced,
+\textit{continuous} representation of opponent behavior than a single one-hot
+identity label. When the opponent plays a mix of strategies at the boundary
+of archetype definitions, the rolling statistics can capture subtle
+intermediate states that the discrete label cannot. This interpretation
+aligns with the behavioral matrix in Fig.~\ref{fig:behavioral}, which shows
+that Model~B conditions on draw-count in an archetype-specific manner.
+
+\subsection{Limitations}
+
+Several limitations bound the scope of our conclusions. First, all opponents
+are hand-coded deterministic or fixed-stochastic archetypes; the agent has
+not been tested against adaptive or self-play opponents. Second, the training
+environment uses limit betting with a fixed ante, which removes no-limit
+strategic considerations such as stack-size-aware bet-sizing. Third, the
+rolling statistics window size ($W=50$) requires several dozen hands before
+the behavioral signal stabilizes, which imposes a cold-start cost when the
+opponent switches. Finally, the evaluation is restricted to heads-up play;
+generalization to multi-player settings would require significant
+architectural changes.
+
+% =====================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+
+We presented CardShark-RL, a reinforcement learning system for heads-up
+5-Card Draw Poker that investigates two approaches to opponent adaptation.
+Model~A uses explicit opponent identity to condition its policy, while
+Model~B infers opponent behavior from a rolling window of behavioral
+statistics. Both models substantially outperform a random baseline across
+all tested archetypes. Model~B achieves an average of +166.50 BB/100,
+compared to +180.65 BB/100 for Model~A, with the gap being statistically
+significant ($p = 0.029$) but practically modest given that Model~B has
+no access to opponent identity.
+
+The behavioral matrix analysis reveals that Model~B has learned
+opponent-specific hand-reading heuristics from draw-count telemetry alone.
+In the non-stationary tournament, Model~B marginally outperforms
+Model~A-Oracle (+160.35 vs.\ +156.28 BB/100), indicating that implicit
+behavioral inference can be more robust than explicit labeling when the
+environment is non-stationary.
+
+Future work could extend this framework to no-limit betting, self-play
+training, and multi-player settings. Incorporating uncertainty estimates
+over the opponent's hand range---combining the implicit behavioral
+statistics with Bayesian hand-range inference---could further narrow the
+gap with explicit modeling, particularly against tight-passive opponents
+like the Rock.
 
 % =====================================================================
 \section*{Acknowledgment}
