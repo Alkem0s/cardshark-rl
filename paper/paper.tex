@@ -52,7 +52,7 @@ and Implicit Opponent Modeling in 5-Card Draw Poker}
 Poker is a canonical benchmark for artificial intelligence research in
 imperfect-information games, requiring agents to reason under
 uncertainty, manage hidden state, and adapt strategy to diverse
-opponents. This paper presents \textbf{CardShark-RL}, a reinforcement
+opponents. This paper presents CardShark-RL, a reinforcement
 learning system for heads-up limit 5-Card Draw Poker that investigates
 two complementary approaches to opponent adaptation: (A) explicit
 opponent modeling, in which a one-hot identifier encodes the opponent
@@ -114,24 +114,19 @@ adaptively exploit behaviorally distinct opponents through implicit
 modeling alone, without access to explicit opponent identity
 information?}
 
-To answer this question, we design and implement \textbf{CardShark-RL},
-a complete RL training and evaluation pipeline featuring:
-\begin{itemize}
-    \item A custom PettingZoo AEC environment for limit heads-up
-    5-Card Draw Poker with three hard-coded opponent archetypes;
-    \item \textbf{Model~A} (Explicit): a MaskablePPO agent that
-    receives a one-hot encoding of the opponent archetype in its
-    observation vector;
-    \item \textbf{Model~B} (Implicit): a MaskablePPO agent that
-    receives only a rolling window of 10 behavioral statistics computed
-    from past hands, with no direct opponent identity signal;
-    \item Optuna-based hyperparameter optimization with a
-    Rock-weighted objective function;
-    \item Reward shaping to encourage aggressive exploitation;
-    \item A behavioral matrix analysis, ``The Tell'', that reveals
-    how Model~B adapts its post-draw betting strategy based on
-    opponent draw counts.
-\end{itemize}
+To answer this question, we design and implement CardShark-RL,
+a complete RL training and evaluation pipeline. The system includes
+a custom PettingZoo AEC environment for limit heads-up 5-Card Draw
+Poker with three hand-coded opponent archetypes. Model~A (Explicit)
+is a MaskablePPO agent that receives a one-hot encoding of the
+opponent archetype in its observation vector. Model~B (Implicit)
+receives only a rolling window of 10 behavioral statistics computed
+from past hands, with no direct opponent identity signal. We further
+apply Optuna-based hyperparameter optimization with a Rock-weighted
+objective, reward shaping to encourage aggressive exploitation, and
+a behavioral matrix analysis---``The Tell''---that reveals how
+Model~B adapts its post-draw betting strategy based solely on
+opponent draw counts.
 
 The remainder of this paper is organized as follows.
 Section~\ref{sec:related} reviews related work. Section~\ref{sec:env}
@@ -238,20 +233,14 @@ guide the agent toward more aggressive exploitation strategies.
 
 CardShark-RL implements limit heads-up 5-Card Draw Poker, a
 two-player variant in which each player is dealt five private cards
-and proceeds through four phases:
-\begin{enumerate}
-    \item \textbf{Antes}: Both players post a forced bet of 1 chip.
-    \item \textbf{Pre-draw betting}: A round of limit betting using
-    a small bet of 2 chips, with up to 4 raises.
-    \item \textbf{Draw phase}: Each player selects 0--5 cards to
-    discard and receives replacements from the deck.
-    \item \textbf{Post-draw betting}: A final round of betting using
-    a big bet of 4 chips, with up to 4 raises.
-    \item \textbf{Showdown}: The player with the best 5-card hand
-    wins the pot.
-\end{enumerate}
-
-A player may win before showdown by causing the opponent to fold.
+and proceeds through four phases. First, both players post a forced
+before (ante) of 1~chip. Second, a pre-draw betting round takes place
+using a small bet of 2~chips with up to 4~raises. Third, each player
+selects 0--5 cards to discard and receives replacements from the deck.
+Fourth, a post-draw betting round uses a big bet of 4~chips with up
+to 4~raises, after which a showdown determines the winner by best
+5-card hand. A player may win before showdown by causing the opponent
+to fold.
 
 \subsection{PettingZoo AEC Environment}
 
@@ -267,18 +256,12 @@ info)} interface.
 
 \subsection{Action Space}
 
-The action space is \texttt{Discrete(35)}:
-\begin{itemize}
-    \item \textbf{Action 0}: Fold
-    \item \textbf{Action 1}: Call / Check
-    \item \textbf{Action 2}: Raise / Bet
-    \item \textbf{Actions 3--34}: Draw actions, where the index
-    encodes a 5-bit bitmask over the five card positions
-    (bit $i = 1$ discards card~$i$). Action~3 corresponds to
-    bitmask~0 (stand pat; discard nothing), and Action~34
-    corresponds to bitmask~31 (discard all five cards).
-\end{itemize}
-
+The action space is \texttt{Discrete(35)}. Action~0 is Fold,
+Action~1 is Call/Check, and Action~2 is Raise/Bet. Actions 3--34
+are draw actions, where the index encodes a 5-bit bitmask over
+the five card positions (bit $i = 1$ discards card~$i$).
+Action~3 corresponds to bitmask~0 (stand pat; discard nothing)
+and Action~34 corresponds to bitmask~31 (discard all five cards).
 An action mask vector of 35 binary flags is maintained at each
 step, enabling MaskablePPO \cite{huang2022closer} to restrict the
 policy to legal actions. During betting phases, only Actions 0--2
@@ -289,44 +272,30 @@ are legal; during the draw phase, only Actions 3--34 are legal.
 The observation vector is a 26-dimensional (for Model~A) or
 33-dimensional (for Model~B) float32 array normalized to $[0,1]$
 (or $[-1,1]$ for opponent-draw features). The core 23 features
-shared by both models are:
+shared by both models are organized into six groups. Hand encoding
+(10 features) represents each of the five cards as a normalized
+rank and normalized suit, both in $[0,1]$. Hand strength
+(2 features) gives a normalized hand category (0=High Card to
+8=Straight Flush) and a normalized evaluation score. Pot features
+(3 features) include normalized pot size, normalized bet-to-call,
+and pot odds ratio. Phase encoding (3 features) is a one-hot vector
+over $\{$pre-draw, draw, post-draw$\}$. Opponent draw count
+(1 feature) is the normalized number of cards the opponent drew,
+or $-1$ if the draw phase has not yet occurred. Strategic features
+(4 features) cover a positional indicator, own raise count
+(normalized), opponent aggression flag, and opponent pre-draw
+raise flag.
 
-\begin{itemize}
-    \item \textbf{Hand encoding} (10 features): For each of the
-    five cards, a normalized rank $\in [0,1]$ and normalized suit
-    $\in [0,1]$.
-    \item \textbf{Hand strength} (2 features): Normalized hand
-    category (0=High Card to 8=Straight Flush) and normalized
-    evaluation score.
-    \item \textbf{Pot features} (3 features): Normalized pot size,
-    normalized bet-to-call, and pot odds ratio.
-    \item \textbf{Phase encoding} (3 features): One-hot vector
-    $\in \{$pre-draw, draw, post-draw$\}$.
-    \item \textbf{Opponent draw count} (1 feature): Normalized
-    number of cards the opponent drew, or $-1$ if the draw phase
-    has not yet occurred.
-    \item \textbf{Strategic features} (4 features): Positional
-    indicator (in/out of position), own raise count (normalized),
-    opponent aggression flag, and opponent pre-draw raise flag.
-\end{itemize}
-
-\textbf{Model~A} appends a 3-dimensional one-hot vector encoding
+Model~A appends a 3-dimensional one-hot vector encoding
 the opponent archetype (Calling Station, Maniac, or Rock).
 
-\textbf{Model~B} appends a 10-dimensional rolling statistics vector
-computed over the last $W$ hands:
-\begin{enumerate}
-    \item Fold frequency pre-draw
-    \item Fold frequency post-draw
-    \item Raise frequency post-draw
-    \item Average cards drawn (normalized)
-    \item Raise-then-stand-pat correlation
-    \item Fold-after-drawing-3 frequency
-    \item Raise-after-standing-pat frequency
-    \item VPIP (Voluntarily Put In Pot)
-    \item PFR (Pre-draw Raise frequency)
-    \item Aggression Factor (raises / calls, normalized)
-\end{enumerate}
+Model~B appends a 10-dimensional rolling statistics vector
+computed over the last $W$ hands, comprising: fold frequency
+pre-draw, fold frequency post-draw, raise frequency post-draw,
+average cards drawn (normalized), raise-then-stand-pat correlation,
+fold-after-drawing-3 frequency, raise-after-standing-pat frequency,
+VPIP (Voluntarily Put In Pot), PFR (Pre-draw Raise frequency),
+and Aggression Factor (raises / calls, normalized).
 
 \subsection{Hand Evaluator}
 
@@ -341,18 +310,18 @@ through Straight Flush).
 \subsection{Opponent Archetypes}
 
 Three hand-crafted deterministic/stochastic opponents model
-behaviorally distinct playing styles:
+behaviorally distinct playing styles.
 
-\textbf{CallingStation} (Archetype~0): A passive opponent that never
+CallingStation (Archetype~0) is a passive opponent that never
 bluffs and never raises. It always calls and draws optimally by
 keeping its best group (pair, trips, etc.) and discarding kickers.
 
-\textbf{Maniac} (Archetype~1): An aggressive opponent that raises
+Maniac (Archetype~1) is an aggressive opponent that raises
 70\% of the time when raising is legal, and chases flush and straight
 draws 60\% of the time during the draw phase by drawing one card.
 It rarely folds (5\% probability), creating a loose, unpredictable style.
 
-\textbf{Rock} (Archetype~2): A tight-passive opponent that folds
+Rock (Archetype~2) is a tight-passive opponent that folds
 pre-draw on all unpaired hands if there is a bet to call, calls only
 with a pair below Jacks, raises with Jacks-or-better, and stands pat
 on two-pair or better hands. This opponent is the hardest to exploit,
@@ -414,20 +383,15 @@ The base reward at the end of each hand is the net chip profit:
 $r = \text{pot\_won} - \text{chips\_invested}$ for the winner, and
 $r = -\text{chips\_invested}$ for the loser. Ties yield $r=0$.
 
-Two shaping terms \cite{ng1999policy} are added:
-\begin{itemize}
-    \item \textbf{Fold penalty} $(-\alpha)$: Applied when the agent
-    folds during a phase in which checking would have been free
-    (bet-to-call = 0). This penalizes unnecessarily surrendering
-    equity.
-    \item \textbf{Steal bonus} $(+\beta)$: Applied when the agent
-    raises and the opponent subsequently folds (a successful steal).
-    This rewards aggressive pot-theft.
-\end{itemize}
-
-The shaping weights $\alpha$ and $\beta$ are treated as
-hyperparameters and tuned by Optuna. For Model~B, the optimized
-values are $\alpha = 0.296$ and $\beta = 0.448$.
+Two shaping terms \cite{ng1999policy} are added. A fold penalty
+$(-\alpha)$ is applied when the agent folds during a phase in which
+checking would have been free (bet-to-call = 0), penalizing
+unnecessarily surrendered equity. A steal bonus $(+\beta)$ is applied
+when the agent raises and the opponent subsequently folds (a successful
+steal), rewarding aggressive pot-theft. The shaping weights $\alpha$
+and $\beta$ are treated as hyperparameters and tuned by Optuna.
+For Model~B, the optimized values are $\alpha = 0.296$ and
+$\beta = 0.448$.
 
 \subsection{Opponent Scheduling}
 
