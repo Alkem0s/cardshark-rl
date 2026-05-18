@@ -1,0 +1,37 @@
+CardShark-RL Run Report
+============================================================
+Timestamp: 2026-05-18 14:08:13
+Timesteps per model: 1,000,000
+Training seeds: [42, 142, 242]
+Eval hands: 10,000
+Eval seeds: [0, 100, 200]
+n_envs: 1
+Device: auto
+Seed: 42
+Eval-only: True
+HPO: False (model=n/a)
+
+Results (BB/100):
+--------------------------------------------------------------
+Opponent                  Model A        Model B         Random
+--------------------------------------------------------------
+CallingStation          +86.5±4.3      +79.9±5.0     -143.8±2.7
+Maniac                +408.0±15.7    +390.8±11.5     -222.1±0.1
+Rock                    +47.5±2.8      +28.9±6.5     -151.3±2.0
+--------------------------------------------------------------
+AVERAGE              +180.65        +166.50        -172.44
+
+Statistical Validation (Pooled over 270,000 hands):
+============================================================
+Model B vs Model A (Paired t-test):  t = -2.183, p = 2.904e-02
+Model B vs Random (Paired t-test):   t = +106.853, p = 0.000e+00
+
+Model B 95% Confidence Intervals:
+  Average profit/hand: +1.7087 chips  [95% CI: 1.6531, 1.7644]
+  Average BB/100 hands: +170.87 BB      [95% CI: 165.31, 176.44]
+
+Non-Stationary Adaptation Tournament (1,500 hands):
+============================================================
+Model B (Implicit):         +160.35 BB/100
+Model A (Explicit Oracle):  +156.28 BB/100
+Model A (Explicit Blind):   +50.01 BB/100
