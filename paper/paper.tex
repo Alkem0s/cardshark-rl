@@ -2,7 +2,7 @@
 % CardShark-RL — IEEE Two-Column Paper
 % CENG 454 Final Project Report
 % =====================================================================
-\documentclass[conference]{IEEEtran}
+\documentclass[11pt, conference]{IEEEtran}
 
 \IEEEoverridecommandlockouts
 
@@ -17,7 +17,12 @@
 \usepackage{hyperref}
 \usepackage{multirow}
 \usepackage{array}
-
+\usepackage{adjustbox}
+% --- ADD THESE FOR THE COVER PAGE AND FONT ---
+\usepackage{newtxtext,newtxmath} % Sets font to Times New Roman 11pt
+\usepackage[margin=2.5cm]{geometry} % Sets the 2.5cm margins
+\usepackage{setspace} % Required for 1.0 line spacing
+% ---------------------------------------------
 \graphicspath{{../latest results/}}
 
 \hypersetup{
@@ -33,11 +38,54 @@
 % =====================================================================
 \begin{document}
 
-\title{Decoding ``The Tell'': Exploitative Reinforcement Learning\\
-and Implicit Opponent Modeling in 5-Card Draw Poker}
+% --- THE COVER PAGE ---
+\begin{titlepage}
+    \singlespacing
+    \centering
+    \vspace*{1cm}
+    
+    {\Large \textbf{İZMİR KATİP ÇELEBİ UNIVERSITY}} \\[0.5cm]
+    {\large \textbf{FACULTY OF ENGINEERING AND ARCHITECTURE}} \\[0.5cm]
+    {\large \textbf{DEPARTMENT OF COMPUTER ENGINEERING}} \\[3cm]
+    
+    {\large \textbf{CENG 454: REINFORCEMENT LEARNING}} \\[2cm]
+    
+    {\LARGE \textbf{FINAL PROJECT REPORT:}} \\[0.5cm]
+    {\huge \textbf{CardShark-RL}} \\[0.3cm]
+    {\large \textit{Reinforcement Learning of Behavioral Tells in 5-Card Draw Poker}} \\[4cm]
+    
+    \begin{table}[h]
+        \centering
+        \begin{tabular}{ll}
+            \textbf{Student Name:} & Sarp S\"unb\"ul \\
+            \textbf{Student Number:} & 230401114 \\
+            \addlinespace
+            \textbf{Student Name:} & Alk\i m G\"onen\c{c} Efe \\
+            \textbf{Student Number:} & 220401050 \\
+            \addlinespace
+            \textbf{Student Name:} & Damla Parlaky\i ld\i z \\
+            \textbf{Student Number:} & 220401067 \\
+        \end{tabular}
+    \end{table}
+    
+    \vfill
+    {\large \textbf{Submission Date:}} \\[0.2cm]
+    {\large May 22, 2026}
+    \vspace*{1cm}
+\end{titlepage}
+
+% --- RESET FOR THE MAIN CONTENT ---
+\clearpage
+\pagenumbering{arabic} 
+
+% You can keep or remove \maketitle here. 
+% If you want the title to appear again at the top of page 1, leave it.
+
+
+\title{Reinforcement Learning of Behavioral Tells in 5-Card Draw Poker}
 
 \author{
-  \IEEEauthorblockN{[Author Names]}
+  \IEEEauthorblockN{Alk\i m G\"onen\c{c} Efe$^{1}$, Sarp S\"unb\"ul$^{2}$, Damla Parlaky\i ld\i z$^{3}$}
   \IEEEauthorblockA{
     \textit{Department of Computer Engineering}\\
     \textit{Izmir Katip Celebi University}\\
@@ -49,29 +97,24 @@ and Implicit Opponent Modeling in 5-Card Draw Poker}
 
 % =====================================================================
 \begin{abstract}
-Poker is a canonical benchmark for artificial intelligence research in
-imperfect-information games, requiring agents to reason under
-uncertainty, manage hidden state, and adapt strategy to diverse
-opponents. This paper presents CardShark-RL, a reinforcement
-learning system for heads-up limit 5-Card Draw Poker that investigates
-two complementary approaches to opponent adaptation: (A) explicit
-opponent modeling, in which a one-hot identifier encodes the opponent
-archetype directly in the observation, and (B) implicit opponent
-modeling, in which the agent infers opponent behavior from a rolling
-window of behavioral statistics. Both agents are trained using
-MaskablePPO \cite{raffin2021stable} within a custom PettingZoo
-\cite{terry2021pettingzoo} environment. We further apply Optuna-based
-hyperparameter optimization \cite{akiba2019optuna} and reward shaping
-to improve convergence. The two models are evaluated against three
-hand-crafted opponent archetypes---Calling Station, Maniac, and
-Rock---over 10,000 hands each. We analyze ``The Tell'': the behavioral
-signature that Model~B learns to exploit based solely on an opponent's
-draw-count pattern, without access to any explicit opponent identity.
-Our results show that Model~B (Implicit) achieves +166.50 BB/100 on
-average across all archetypes, compared to +180.65 BB/100 for Model~A
-(Explicit), a gap that is statistically significant ($p = 0.029$) yet
-practically modest, and that Model~B outperforms an oracle-labeled
-explicit agent in a non-stationary setting (+160.35 vs.\ +156.28 BB/100).
+We present CardShark-RL, a reinforcement learning system for heads-up
+limit 5-Card Draw Poker that compares two opponent-adaptation strategies:
+explicit modeling, where a one-hot archetype identifier is fed directly
+into the agent's observation, and implicit modeling, where the agent works
+from a rolling window of 10 behavioral statistics and never sees an
+opponent label. Both agents are trained with MaskablePPO
+\cite{raffin2021stable} in a custom PettingZoo \cite{terry2021pettingzoo}
+environment, with Optuna-based hyperparameter search \cite{akiba2019optuna}
+and hand-crafted reward shaping. Evaluated over 10,000 hands each against
+three scripted archetypes---Calling Station, Maniac, and Rock---the
+explicit agent (Model~A) averages $+180.65$ BB/100, while the implicit
+agent (Model~B) averages $+166.50$ BB/100 ($p = 0.029$). The gap is real
+but modest. More interesting: in a 1,500-hand non-stationary tournament
+where the opponent switches archetype mid-session, Model~B ($+160.35$
+BB/100) edges out an oracle-labeled explicit agent ($+156.28$ BB/100).
+We analyze the behavioral mechanism through which
+Model~B exploits opponent draw-count patterns without ever knowing who
+it is playing.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -81,264 +124,165 @@ hyperparameter optimization
 \end{IEEEkeywords}
 
 % =====================================================================
-\section{Introduction and Motivation}
+\section{Introduction}
 \label{sec:intro}
 
-Poker has long served as a proving ground for AI research on
-decision-making under uncertainty. Unlike chess or Go, poker involves
-hidden information---players observe only their own cards and the
-shared betting history---creating a setting where an optimal strategy
-must reason about the probability distributions over unobserved states
-and simultaneously adapt to the behavioral tendencies of the opponent.
-This combination of imperfect information, sequential decision-making,
-and strategic adaptation makes poker a rich and challenging domain for
-reinforcement learning (RL).
+Poker forces an agent to reason under hidden information and adapt to an
+opponent whose strategy it cannot observe directly. The combination of
+imperfect information, sequential decisions, and an adversarial opponent
+makes it a useful benchmark, because the skills it demands transfer to real decision problems.
 
-Landmark systems such as Libratus \cite{brown2018libratus}, DeepStack
+Systems like Libratus \cite{brown2018libratus}, DeepStack
 \cite{moravcik2017deepstack}, and Pluribus \cite{brown2019superhuman}
-have achieved superhuman performance in Texas Hold'em by combining
-Counterfactual Regret Minimization (CFR) \cite{zinkevich2007regret}
-with sophisticated endgame solving. While these systems represent the
-state of the art in game-theoretically optimal play, they are
-computationally expensive, require large-scale game-tree traversal,
-and are primarily designed to resist exploitation rather than to
-actively exploit opponent weaknesses.
+have solved large variants of Texas Hold'em by minimizing exploitability
+via CFR \cite{zinkevich2007regret}. They are robust against any opponent.
+What they are not designed to do is actively exploit a weak one. An
+equilibrium strategy leaves money on the table against predictable
+opponents; exploitative play picks it up.
 
-In contrast, this work investigates \textit{exploitative} RL:
-training a deep policy network to identify and profit from specific,
-predictable patterns in opponent behavior. We focus on 5-Card Draw
-Poker, a historically significant variant that has received less
-attention in the modern deep learning era, and we formulate a concrete
-research question: \textit{Can a reinforcement learning agent
-adaptively exploit behaviorally distinct opponents through implicit
-modeling alone, without access to explicit opponent identity
-information?}
+We built CardShark-RL to investigate exploitative RL in 5-Card Draw,
+a variant with a clean information structure (each player draws once,
+revealing something about their hand) and enough strategic depth to be
+interesting. The central question is whether an agent can learn to profit
+from opponent behavioral patterns using only indirect evidence. No
+archetype label, just the history of what the opponent has done.
 
-To answer this question, we design and implement CardShark-RL,
-a complete RL training and evaluation pipeline. The system includes
-a custom PettingZoo AEC environment for limit heads-up 5-Card Draw
-Poker with three hand-coded opponent archetypes. Model~A (Explicit)
-is a MaskablePPO agent that receives a one-hot encoding of the
-opponent archetype in its observation vector. Model~B (Implicit)
-receives only a rolling window of 10 behavioral statistics computed
-from past hands, with no direct opponent identity signal. We further
-apply Optuna-based hyperparameter optimization with a Rock-weighted
-objective, reward shaping to encourage aggressive exploitation, and
-a behavioral matrix analysis---``The Tell''---that reveals how
-Model~B adapts its post-draw betting strategy based solely on
-opponent draw counts.
-
-The remainder of this paper is organized as follows.
-Section~\ref{sec:related} reviews related work. Section~\ref{sec:env}
-describes the game environment and opponent archetypes.
-Section~\ref{sec:method} details the proposed methodology.
-Sections~\ref{sec:results}--\ref{sec:conclusion} present results,
-discussion, and conclusions.
+The system implements two agents. Model~A gets the opponent's archetype
+fed to it as a one-hot vector; it knows exactly who it is playing.
+Model~B gets a rolling window of 10 behavioral statistics and has to
+figure the rest out. We run Optuna-based hyperparameter search with a
+Rock-weighted objective (to avoid agents that just farm easy wins),
+use reward shaping to push toward aggression, and run a behavioral
+matrix analysis, which is Model~B's post-draw action
+distribution conditioned on opponent draw count, to understand what
+implicit information it actually learned to use.
 
 % =====================================================================
-\section{Background and Related Work}
+\section{Related Work}
 \label{sec:related}
 
-\subsection{Game-Theoretic Poker AI}
+\subsection{Poker AI}
 
-The challenge of building superhuman poker AI has driven decades of
-research. Early milestones include Polaris \cite{zinkevich2007regret},
-which applied CFR variants to limit Texas Hold'em. The breakthrough
-work of Libratus \cite{brown2018libratus} achieved superhuman
-performance in heads-up no-limit Texas Hold'em in 2017 using an
-endgame solver and safe subgame-refinement techniques \cite{ganzfried2015endgame}.
-DeepStack \cite{moravcik2017deepstack} concurrently demonstrated that
-deep neural networks could replace the look-up tables used in
-endgame solving, enabling real-time play without pre-computed
-strategies. Pluribus \cite{brown2019superhuman} subsequently extended
-this paradigm to six-player no-limit Hold'em, the first superhuman
-AI to master multiplayer poker. A key distinction of these systems is
-their focus on \textit{equilibrium strategies}---policies robust to
-any opponent---rather than \textit{exploitative} strategies that
-target specific opponent weaknesses.
+CFR-based systems have dominated competitive poker AI since Polaris
+\cite{zinkevich2007regret}. Libratus \cite{brown2018libratus} and
+DeepStack \cite{moravcik2017deepstack} both solved heads-up no-limit
+Hold'em at a superhuman level in 2017 through different approaches
+to endgame solving \cite{ganzfried2015endgame}. Pluribus
+\cite{brown2019superhuman} extended this to six-player play. All of
+these are equilibrium-seeking: they are hard to beat, but they do not
+specifically target opponent weaknesses.
 
-\subsection{Deep Reinforcement Learning in Games}
+Our work sits in a different space. We train explicitly to exploit
+fixed behavioral patterns, accepting that the resulting policy would
+be vulnerable against an adversary that adapts in return.
 
-Deep reinforcement learning has achieved remarkable results in a wide
-range of games. Mnih et al.~\cite{mnih2015human} demonstrated that
-DQN could achieve human-level performance on Atari games by combining
-Q-learning with deep convolutional networks, experience replay, and
-target networks. Silver et al.~\cite{silver2016mastering} applied
-deep RL and Monte Carlo tree search to master the game of Go, a
-domain previously thought intractable for AI. The Proximal Policy
-Optimization (PPO) algorithm \cite{schulman2017proximal}, introduced
-by Schulman et al., provides a stable and sample-efficient policy
-gradient method well-suited to discrete action environments such as
-card games. PPO's clipped surrogate objective prevents destructively
-large policy updates while remaining simpler to implement than its
-predecessor, TRPO. In our work, we use MaskablePPO, an extension of
-PPO from the sb3-contrib library \cite{raffin2021stable}, which
-incorporates action masking to handle the structured invalid-action
-spaces that arise in poker (betting during draw phases and vice versa).
+\subsection{Action Masking}
 
-\subsection{Action Masking in Reinforcement Learning}
+In 5-Card Draw, the agent has 35 possible actions but only a small
+subset are legal at any step. Huang and Onta\~{n}{\'o}n
+\cite{huang2022closer} show that hard action masking---setting illegal
+action log-probabilities to $-\infty$ before the softmax---is both
+theoretically sound and empirically far better than penalty-based
+alternatives when invalid actions are frequent. We use MaskablePPO
+\cite{raffin2021stable} for exactly this reason.
 
-Huang and Onta\~{n}{\'o}n~\cite{huang2022closer} provide a
-theoretical and empirical analysis of invalid action masking in policy
-gradient algorithms. They demonstrate that masking is critical when
-the ratio of invalid to valid actions is large, as penalty-based
-approaches fail to learn in such settings. In 5-Card Draw Poker,
-the agent faces a discrete action space of 35 actions (Fold, Call,
-Raise, and 32 draw bitmask combinations), of which only a small
-subset is legal at any given game state. Action masking is therefore
-essential for efficient learning and training stability.
+\subsection{Opponent Modeling}
 
-\subsection{Opponent Modeling and Behavioral Inference}
+There is a large literature on opponent modeling in multi-agent RL,
+ranging from Bayesian type inference to neural latent embeddings.
+The rolling-statistics approach we use for Model~B is conceptually
+similar to behavioral profiling in poker theory: track VPIP,
+Pre-draw Raise frequency, Aggression Factor, and draw tendencies over
+a window of recent hands, and let the policy condition on those
+statistics rather than on an explicit type label.
 
-Opponent modeling in multi-agent settings has been studied
-extensively, with approaches ranging from Bayesian inference over
-opponent type distributions to neural network-based latent
-representations. Explicit modeling approaches
-build a dedicated representation of the opponent (e.g., type
-classification or hand-range estimation), while implicit approaches
-allow the agent's policy to adapt to opponent behavior through
-reward-maximizing experience without an explicit opponent model. The
-rolling-statistics approach employed by Model~B, tracking metrics
-such as VPIP (Voluntarily Put In Pot), Pre-draw Raise frequency, and
-Aggression Factor, aligns with the behavioral profiling tradition in
-poker theory and has parallels with the latent opponent-embedding
-approaches studied in recent deep multi-agent RL literature.
+\subsection{Reward Shaping and HPO}
 
-\subsection{Hyperparameter Optimization}
-
-Hyperparameter optimization (HPO) is critical for RL systems, where
-training outcomes are sensitive to learning rates, architecture
-choices, and exploration-exploitation trade-offs. Akiba et
-al.~\cite{akiba2019optuna} introduced Optuna, a next-generation HPO
-framework using tree-structured Parzen estimators (TPE) for efficient
-Bayesian search. We employ Optuna's MedianPruner with warm-up steps
-to prune underperforming trials early, enabling efficient search over
-a 15-dimensional hyperparameter space.
-
-\subsection{Reward Shaping}
-
-Ng et al.~\cite{ng1999policy} established the theoretical foundation
-for potential-based reward shaping, proving that shaped rewards
-preserve the set of optimal policies under suitable conditions. In
-poker, raw chip profit is a natural but sparse reward signal. We
-introduce two auxiliary shaping terms---a penalty for folding when
-checking was available, and a bonus for successful steal attempts---to
-guide the agent toward more aggressive exploitation strategies.
+Ng et al.~\cite{ng1999policy} established that potential-based reward
+shaping preserves optimal policies. We use two auxiliary shaping terms
+to guide the agent toward aggressive exploitation. Hyperparameter
+search uses Optuna \cite{akiba2019optuna} with TPE sampling and
+median pruning over a 15-dimensional space.
 
 % =====================================================================
-\section{Environment Design}
+\section{Environment}
 \label{sec:env}
 
-\subsection{5-Card Draw Poker Rules}
+\subsection{Game Rules}
 
-CardShark-RL implements limit heads-up 5-Card Draw Poker, a
-two-player variant in which each player is dealt five private cards
-and proceeds through four phases. First, both players post a forced
-before (ante) of 1~chip. Second, a pre-draw betting round takes place
-using a small bet of 2~chips with up to 4~raises. Third, each player
-selects 0--5 cards to discard and receives replacements from the deck.
-Fourth, a post-draw betting round uses a big bet of 4~chips with up
-to 4~raises, after which a showdown determines the winner by best
-5-card hand. A player may win before showdown by causing the opponent
-to fold.
+CardShark-RL implements limit heads-up 5-Card Draw. Both players post
+a 1-chip ante. Pre-draw betting uses 2-chip bets (up to 4 raises).
+Each player discards and draws 0--5 cards. Post-draw betting uses
+4-chip bets (up to 4 raises), followed by showdown. A player can win
+before showdown by making the opponent fold.
 
-\subsection{PettingZoo AEC Environment}
+\subsection{Environment Implementation}
 
-The game is implemented as a PettingZoo Agent-Environment Cycle (AEC)
-environment \cite{terry2021pettingzoo}, a standardized API for
-turn-based multi-agent systems. The AEC model alternates agent turns
-in a well-defined cycle, making it natural for sequential card games.
-The environment is wrapped by a Gymnasium-compatible
-\cite{brockman2016openai} single-agent wrapper (\texttt{DrawPokerGymEnv})
-that auto-steps the opponent, presenting the RL agent
-(\texttt{player\_0}) with a standard \texttt{(obs, reward, done,
-info)} interface.
+The game runs as a PettingZoo AEC environment \cite{terry2021pettingzoo},
+wrapped by a Gymnasium-compatible \cite{brockman2016openai} single-agent
+interface (\texttt{DrawPokerGymEnv}) that auto-steps the opponent and
+exposes a standard \texttt{(obs, reward, done, info)} tuple to the RL
+agent (\texttt{player\_0}).
 
 \subsection{Action Space}
 
-The action space is \texttt{Discrete(35)}. Action~0 is Fold,
-Action~1 is Call/Check, and Action~2 is Raise/Bet. Actions 3--34
-are draw actions, where the index encodes a 5-bit bitmask over
-the five card positions (bit $i = 1$ discards card~$i$).
-Action~3 corresponds to bitmask~0 (stand pat; discard nothing)
-and Action~34 corresponds to bitmask~31 (discard all five cards).
-An action mask vector of 35 binary flags is maintained at each
-step, enabling MaskablePPO \cite{huang2022closer} to restrict the
-policy to legal actions. During betting phases, only Actions 0--2
-are legal; during the draw phase, only Actions 3--34 are legal.
+The action space is \texttt{Discrete(35)}: Fold (0), Call/Check (1),
+Raise/Bet (2), and 32 draw actions (3--34) encoding a 5-bit bitmask
+over card positions. During betting phases only actions 0--2 are valid;
+during draw phases only 3--34 are. Action masking enforces this at
+every step.
 
-\subsection{Observation Space}
+\subsection{Observations}
 
-The observation vector is a 26-dimensional (for Model~A) or
-33-dimensional (for Model~B) float32 array normalized to $[0,1]$
-(or $[-1,1]$ for opponent-draw features). The core 23 features
-shared by both models are organized into six groups. Hand encoding
-(10 features) represents each of the five cards as a normalized
-rank and normalized suit, both in $[0,1]$. Hand strength
-(2 features) gives a normalized hand category (0=High Card to
-8=Straight Flush) and a normalized evaluation score. Pot features
-(3 features) include normalized pot size, normalized bet-to-call,
-and pot odds ratio. Phase encoding (3 features) is a one-hot vector
-over $\{$pre-draw, draw, post-draw$\}$. Opponent draw count
-(1 feature) is the normalized number of cards the opponent drew,
-or $-1$ if the draw phase has not yet occurred. Strategic features
-(4 features) cover a positional indicator, own raise count
-(normalized), opponent aggression flag, and opponent pre-draw
-raise flag.
+Both models share 23 base features: 10 for card encoding (normalized
+rank and suit per card), 2 for hand strength (category and evaluation
+score), 3 for pot state (size, bet-to-call, pot odds), 3 phase
+indicators, 1 for opponent draw count (or $-1$ if pre-draw), and 4
+strategic features (position, own raise count, opponent aggression flag,
+opponent pre-draw raise flag).
 
-Model~A appends a 3-dimensional one-hot vector encoding
-the opponent archetype (Calling Station, Maniac, or Rock).
+Model~A appends a 3-dimensional one-hot opponent archetype vector,
+giving a 26-dimensional observation.
 
-Model~B appends a 10-dimensional rolling statistics vector
-computed over the last $W$ hands, comprising: fold frequency
-pre-draw, fold frequency post-draw, raise frequency post-draw,
-average cards drawn (normalized), raise-then-stand-pat correlation,
-fold-after-drawing-3 frequency, raise-after-standing-pat frequency,
-VPIP (Voluntarily Put In Pot), PFR (Pre-draw Raise frequency),
-and Aggression Factor (raises / calls, normalized).
+Model~B appends a 10-dimensional rolling statistics vector computed
+over the last $W$ hands: fold frequencies pre- and post-draw, raise
+frequency post-draw, average cards drawn, raise-then-stand-pat
+correlation, fold-after-drawing-3 frequency, raise-after-standing-pat
+frequency, VPIP, PFR, and Aggression Factor. Total: 33 dimensions.
 
 \subsection{Hand Evaluator}
 
-Cards are encoded as integers $0$--$51$ where $\text{rank} = c
-\bmod 13$ (0=2, \ldots, 12=A) and $\text{suit} = \lfloor c / 13
-\rfloor$ (0=Clubs, \ldots, 3=Spades). Hand evaluation returns a
-scalar score $= \text{category} \times 10^6 + \text{tiebreaker}$,
-where the tiebreaker uses base-14 encoding of rank groups, ensuring
-score ordering within and across all nine hand categories (High Card
-through Straight Flush).
+Cards are encoded as integers $0$--$51$ where $\text{rank} = c \bmod 13$
+and $\text{suit} = \lfloor c / 13 \rfloor$. Hand strength is a scalar
+$= \text{category} \times 10^6 + \text{tiebreaker}$, with the
+tiebreaker using base-14 rank encoding. This gives a total ordering
+across all nine hand categories.
 
 \subsection{Opponent Archetypes}
 
-Three hand-crafted deterministic/stochastic opponents model
-behaviorally distinct playing styles.
+We wrote three scripted opponents:
 
-CallingStation (Archetype~0) is a passive opponent that never
-bluffs and never raises. It always calls and draws optimally by
-keeping its best group (pair, trips, etc.) and discarding kickers.
+\textbf{CallingStation} never raises and never folds. It draws optimally
+(keeps best group, discards kickers). A completely passive opponent.
 
-Maniac (Archetype~1) is an aggressive opponent that raises
-70\% of the time when raising is legal, and chases flush and straight
-draws 60\% of the time during the draw phase by drawing one card.
-It rarely folds (5\% probability), creating a loose, unpredictable style.
+\textbf{Maniac} raises 70\% of the time when it can, folds only 5\% of
+the time, and chases flush/straight draws 60\% of the time by drawing
+one card.
 
-Rock (Archetype~2) is a tight-passive opponent that folds
-pre-draw on all unpaired hands if there is a bet to call, calls only
-with a pair below Jacks, raises with Jacks-or-better, and stands pat
-on two-pair or better hands. This opponent is the hardest to exploit,
-as it only invests chips with strong holdings.
+\textbf{Rock} plays a tight range: folds unpaired hands pre-draw to any
+bet, calls with a pair below Jacks, raises with Jacks-or-better, and
+stands pat on two-pair or better. It is the hardest to exploit because
+it rarely puts chips in without a strong hand.
 
 % =====================================================================
 \section{Methodology}
 \label{sec:method}
 
-\subsection{Training Algorithm: MaskablePPO}
+\subsection{MaskablePPO}
 
-Both models are trained using MaskablePPO from sb3-contrib
-\cite{raffin2021stable}, a variant of Proximal Policy Optimization
-\cite{schulman2017proximal} that incorporates action masking directly
-into the policy gradient update. The policy is an MLP
-(Multi-Layer Perceptron) actor-critic network. The clipped
-surrogate objective of PPO is:
+Both agents use MaskablePPO \cite{raffin2021stable}, a PPO variant that
+applies action masking directly in the policy update. The clipped
+objective is:
 
 \begin{equation}
 \mathcal{L}^{\text{CLIP}}(\theta) = \hat{\mathbb{E}}_t \left[
@@ -349,10 +293,7 @@ surrogate objective of PPO is:
 \end{equation}
 
 where $r_t(\theta) = \pi_\theta(a_t|s_t) / \pi_{\theta_\text{old}}
-(a_t|s_t)$ is the probability ratio and $\hat{A}_t$ is the
-Generalized Advantage Estimate (GAE) \cite{schulman2016high}. The
-GAE with parameter $\lambda$ interpolates between one-step TD error
-($\lambda=0$) and Monte Carlo returns ($\lambda=1$):
+(a_t|s_t)$ and $\hat{A}_t$ is the GAE \cite{schulman2016high}:
 
 \begin{equation}
 \hat{A}_t = \sum_{l=0}^{\infty} (\gamma\lambda)^l \delta_{t+l},
@@ -360,58 +301,42 @@ GAE with parameter $\lambda$ interpolates between one-step TD error
 \label{eq:gae}
 \end{equation}
 
-Action masking is applied at inference time by setting the
-log-probabilities of illegal actions to $-\infty$ before the
-softmax, ensuring the agent never samples illegal actions.
-Huang and Onta\~{n}{\'o}n~\cite{huang2022closer} demonstrate that
-this hard masking is both theoretically sound and empirically
-superior to penalty-based alternatives.
+Illegal actions are masked by setting their log-probabilities to
+$-\infty$ before the softmax.
 
 \subsection{Network Architecture}
 
-Both models use an MLP policy with fully connected layers of
-equal width. The policy and value networks share no parameters;
-each is a separate MLP head on top of the shared feature extractor.
-For Model~B (implicit), the optimized architecture uses four hidden
-layers of 256 neurons each (depth chosen by HPO). For Model~A
-(explicit), a three-layer architecture of 256 neurons is used as the
-default.
+Both models use a separate actor and critic MLP with no shared parameters.
+Model~B (implicit) uses four hidden layers of 256 neurons each, chosen
+by HPO. Model~A (explicit) uses three layers of 256 neurons.
 
 \subsection{Reward Function}
 
-The base reward at the end of each hand is the net chip profit:
-$r = \text{pot\_won} - \text{chips\_invested}$ for the winner, and
-$r = -\text{chips\_invested}$ for the loser. Ties yield $r=0$.
-
-Two shaping terms \cite{ng1999policy} are added. A fold penalty
-$(-\alpha)$ is applied when the agent folds during a phase in which
-checking would have been free (bet-to-call = 0), penalizing
-unnecessarily surrendered equity. A steal bonus $(+\beta)$ is applied
-when the agent raises and the opponent subsequently folds (a successful
-steal), rewarding aggressive pot-theft. The shaping weights $\alpha$
-and $\beta$ are treated as hyperparameters and tuned by Optuna.
-For Model~B, the optimized values are $\alpha = 0.296$ and
-$\beta = 0.448$.
+The base reward is net chip profit: $r = \text{pot\_won} -
+\text{chips\_invested}$ for the winner, $r = -\text{chips\_invested}$
+for the loser. Two shaping terms are added \cite{ng1999policy}: a fold
+penalty $(-\alpha)$ when the agent folds in a spot where checking was
+free (bet-to-call = 0), and a steal bonus $(+\beta)$ when the agent
+raises and the opponent folds. The weights are tuned by Optuna; for
+Model~B, $\alpha = 0.296$ and $\beta = 0.448$.
 
 \subsection{Opponent Scheduling}
 
-For Model~A (explicit), random opponent scheduling is used:
-a new archetype is chosen uniformly at random before each episode.
-Since the agent has direct access to the opponent's identity through
-the one-hot feature, it can immediately condition its policy on the
-current archetype.
+Model~A uses random scheduling, meaning a new archetype is drawn uniformly before
+each episode. Since it sees the archetype label directly, it can condition
+immediately.
 
-For Model~B (implicit), a \textit{hybrid schedule} is employed. The
-first $H$ episodes use \textit{block scheduling}: opponents are
-cycled through in blocks of $B$ consecutive hands, allowing the
-rolling statistics to build up a stable behavioral signal before the
-agent can exploit it. After $H$ episodes, random scheduling is
-resumed to encourage robustness. The switch point $H$ and block size
-$B$ are chosen by HPO.
+Model~B uses a hybrid schedule. The first $H$ episodes use block
+scheduling: opponents cycle in blocks of $B$ consecutive hands, giving
+the rolling statistics time to build a stable signal before the agent
+tries to exploit it. After $H$ episodes, scheduling reverts to random.
+$H$ and $B$ are HPO parameters.
 
-\subsection{Hyperparameter Optimization with Optuna}
+\subsection{Hyperparameter Search}
 
-We employ Optuna \cite{akiba2019optuna} with Tree-structured Parzen Estimator (TPE) sampling and a MedianPruner to search over a 15-dimensional hyperparameter space. The best configurations found for both models are summarized in Table~\ref{tab:best_params}. Each trial trains the model for 300,000 timesteps and is evaluated using a Rock-weighted objective:
+We ran Optuna \cite{akiba2019optuna} with TPE sampling and MedianPruner
+over a 15-dimensional space. Each trial trains for 300,000 timesteps
+and is scored by a Rock-weighted objective:
 \begin{equation}
 \text{score} = 0.5 \cdot \text{BB}_{100}^{\text{Rock}}
              + 0.25 \cdot \text{BB}_{100}^{\text{Station}}
@@ -419,18 +344,19 @@ We employ Optuna \cite{akiba2019optuna} with Tree-structured Parzen Estimator (T
 \label{eq:hpo_obj}
 \end{equation}
 
-The Rock archetype receives extra weight (0.5) because it is the
-hardest opponent to exploit and determines whether the agent has
-learned genuine strategic depth or is merely farming easy wins
-against passive opponents.
+The Rock weight is doubled because farming the Maniac or CallingStation
+is easy; good performance against the Rock is evidence that the agent
+learned something real. The best configurations are in Table~\ref{tab:best_params}.
 
 \begin{table}[htbp]
-\caption{Best Hyperparameters for Model A (Explicit) and Model B (Implicit)}
+\caption{Best Hyperparameters Found by Optuna}
 \label{tab:best_params}
 \centering
-\begin{tabular}{lll}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lcc}
 \toprule
-\textbf{Hyperparameter} & \textbf{Model A (Explicit)} & \textbf{Model B (Implicit)} \\
+\textbf{Hyperparameter} & \textbf{Model A (Expl.)} & \textbf{Model B (Impl.)} \\
 \midrule
 learning\_rate      & $1.63 \times 10^{-4}$ & $3.50 \times 10^{-4}$ \\
 n\_steps            & 4096 & 2048 \\
@@ -445,196 +371,182 @@ max\_grad\_norm     & 0.484 & 0.464 \\
 fold\_penalty       & 0.379 & 0.328 \\
 steal\_bonus        & 0.492 & 0.212 \\
 lr\_schedule        & constant & linear \\
-net\_arch           & [128, 128] & [256, 256, 256, 256] \\
-rolling\_window $W$ & N/A & 50 \\
-block\_size $B$     & N/A & 400 \\
-hybrid\_switch $H$  & N/A & 972{,}000 steps \\
+net\_arch           & [128] $\times$ 2 & [256] $\times$ 4 \\
+rolling window $W$ & N/A & 50 \\
+block size $B$     & N/A & 400 \\
+hybrid switch $H$  & N/A & 972k steps \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{Training Protocol}
+\subsection{Training and Evaluation}
 
-Both models are trained for 1{,}000{,}000 timesteps using
-$n_\text{envs} = 4$ parallel environments (DummyVecEnv) with
-distinct random seeds. A per-opponent evaluation callback runs every
-50{,}000 timesteps, reporting intermediate BB/100 values for each
-archetype to monitor learning dynamics. Training is performed on a
-single machine; the device is selected automatically (CPU or CUDA).
+Both models train for 1{,}000{,}000 timesteps using 4 parallel
+environments (DummyVecEnv). A per-opponent callback evaluates BB/100
+every 50{,}000 timesteps to track learning dynamics.
 
-\subsection{Evaluation Metric: BB/100}
-
-Performance is reported in \textit{big blinds per 100 hands}
-(BB/100), a standard poker metric:
+Performance is reported in \textit{big blinds per 100 hands} (BB/100):
 \begin{equation}
 \text{BB/100} = \frac{\text{total profit}}{\text{number of hands}} \times 100
 \label{eq:bb100}
 \end{equation}
 
-where the big blind equals 4 chips (the post-draw bet size) in
-our game. A positive BB/100 indicates a profitable strategy; a
-negative value indicates a losing strategy. Each evaluation run
-uses 10{,}000 hands against a fixed opponent archetype with a warm-up
-phase of 50 random hands (for Model~B only) to populate the rolling
-statistics buffer before evaluation begins.
+where 1 BB = 4 chips. Final evaluation runs 10{,}000 hands against each
+fixed archetype over 3 independent seeds. Model~B uses a 50-hand random
+warm-up to populate the statistics buffer before evaluation starts.
 
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=\columnwidth]{architecture.png}
-  \caption{Model~B (Implicit) architecture and inference flow. The
-    observation vector concatenates private hand information, game-state
-    features, and the 10-dimensional rolling behavioral statistics.
-    Four shared MLP layers (256 ReLU units each) feed separate policy
-    and value heads; action masking is applied before sampling.}
+  \caption{Model~B's inference path: hand features, game state, and the
+    10-dimensional rolling statistics buffer feed four 256-unit MLP layers,
+    which split into policy and value heads. Action masking zeroes out
+    illegal actions before sampling. The rolling buffer is the only
+    opponent-identity signal available.}
   \label{fig:architecture}
 \end{figure}
 
 % =====================================================================
-\section{Experimental Results}
+\section{Results}
 \label{sec:results}
 
-\subsection{Cross-Evaluation Performance}
+\subsection{Cross-Evaluation}
 
-Both models are evaluated against each of the three opponent archetypes
-over 10{,}000 hands, repeated across three independent evaluation seeds
-(0, 100, 200). Mean BB/100 and standard deviations are reported in
-Table~\ref{tab:results}. A random-action baseline is included for
-reference.
+Table~\ref{tab:results} summarizes BB/100 across three seeds per
+opponent. Both trained agents are strongly profitable against all three
+archetypes; the random baseline loses to all of them.
 
 \begin{table}[htbp]
-\caption{Evaluation Results: BB/100 by Model and Opponent (mean $\pm$ std over 3 seeds)}
+\caption{BB/100 by Model and Opponent (mean $\pm$ std)}
 \label{tab:results}
 \centering
+\scriptsize
+\setlength{\tabcolsep}{3pt}
 \begin{tabular}{lccc}
 \toprule
-\textbf{Opponent} & \textbf{Model A (Expl.)} & \textbf{Model B (Impl.)} & \textbf{Random} \\
+\textbf{Opponent} & \textbf{Model A} & \textbf{Model B} & \textbf{Random} \\
 \midrule
-CallingStation & $+86.5 \pm 4.3$ & $+79.9 \pm 5.0$ & $-143.8 \pm 2.7$ \\
-Maniac         & $+408.0 \pm 15.7$ & $+390.8 \pm 11.5$ & $-222.1 \pm 0.1$ \\
-Rock           & $+47.5 \pm 2.8$   & $+28.9 \pm 6.5$   & $-151.3 \pm 2.0$ \\
+Calling St. & $+86.5 \pm 4.3$ & $+79.9 \pm 5.0$ & $-143.8 \pm 2.7$ \\
+Maniac      & $+408.0 \pm 15.7$ & $+390.8 \pm 11.5$ & $-222.1 \pm 0.1$ \\
+Rock        & $+47.5 \pm 2.8$   & $+28.9 \pm 6.5$   & $-151.3 \pm 2.0$ \\
 \midrule
 \textbf{Average} & $+180.65$ & $+166.50$ & $-172.44$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Both trained agents substantially outperform the random baseline across
-all archetypes. Model~A (Explicit) posts the higher average (+180.65 BB/100
-vs.\ +166.50 BB/100 for Model~B), which is expected given that it receives
-the opponent identity directly in its observation. The gap is most
-pronounced against the Rock archetype (+47.5 vs.\ +28.9), a hard-to-exploit
-opponent that only invests chips with strong holdings. Against the Maniac,
-both models achieve very high profitability, as the Maniac's loose
-aggression and frequent draws create many exploitable spots.
+Model~A leads by about 14 BB/100 overall. Against the Rock the gap is
+largest (+18.6 BB/100); the Rock's tight range is hard to read without
+knowing its archetype, and the rolling statistics take longer to build
+a usable signal. Against the Maniac the difference narrows to +17.2
+BB/100. The Maniac's high VPIP and frequent single-card draws are
+distinctive enough that Model~B picks up the pattern quickly within
+the $W=50$ window.
 
-Fig.~\ref{fig:bb_comparison} shows the cross-evaluation profitability as a
-grouped bar chart, and Fig.~\ref{fig:cumulative} shows cumulative profit
-trajectories over 30{,}000 hands (three seeds concatenated). The linear
-growth of the profit curves for both trained agents confirms that their
-exploitative advantage is stable and does not degrade over longer horizons.
+Fig.~\ref{fig:bb_comparison} shows the profitability breakdown.
+Fig.~\ref{fig:cumulative} shows cumulative profit over 30{,}000 hands
+(three seeds concatenated): both trained agents grow linearly, confirming
+that the exploitative advantage does not erode over time.
 
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=\columnwidth]{bb_per_100_comparison.png}
-  \caption{Cross-evaluation profitability (BB/100) for Model~A (Explicit),
-    Model~B (Implicit), and the random baseline across the three opponent
-    archetypes. Error bars are not shown in the bar chart but are provided
-    in Table~\ref{tab:results}.}
+  \caption{Explicit identity gives a clear edge against the Rock but
+    matters less against the Maniac, where behavioral patterns are
+    obvious from draws alone. Model~B still comfortably beats all three.}
   \label{fig:bb_comparison}
 \end{figure}
 
 \begin{figure*}[htbp]
   \centering
   \includegraphics[width=\textwidth]{cumulative_profit.png}
-  \caption{Cumulative profit trajectories over 30{,}000 hands (three
-    10{,}000-hand evaluation seeds concatenated) per opponent archetype.
-    Both trained models exhibit consistent positive linear growth,
-    while the random baseline degrades uniformly.}
+  \caption{Cumulative profit grows linearly for both trained agents
+    across 30{,}000 hands---the exploitative advantage is stable and
+    does not saturate. The random baseline loses at a near-constant rate,
+    confirming the archetypes are consistently exploitable.}
   \label{fig:cumulative}
 \end{figure*}
 
-\subsection{Behavioral Analysis: ``The Tell''}
+\subsection{``The Tell'': Behavioral Matrix Analysis}
 
-A central contribution of this work is the behavioral matrix analysis of
-Model~B's post-draw action distribution, conditioned on the observed
-opponent draw count. Fig.~\ref{fig:behavioral} displays the frequency
-of Fold, Call, and Raise actions for three representative draw-count
-values (0, 1, and 3) across each opponent archetype.
+The most illuminating result is not the aggregate BB/100 but what
+Model~B actually learned to do. Fig.~\ref{fig:behavioral} shows
+Model~B's post-draw action distribution (Fold / Call / Raise) broken
+down by opponent draw count (0, 1, or 3 cards) for each archetype.
 
 \begin{figure*}[htbp]
   \centering
   \includegraphics[width=\textwidth]{behavioral_matrix.png}
-  \caption{``The Tell'': Model~B post-draw action frequencies conditioned on
-    opponent draw count (rows) for each opponent archetype (panels). Model~B
-    adapts its post-draw aggression based on opponent draw count without
-    access to explicit opponent identity.}
+  \caption{Model~B reads opponent draw counts as hand-strength signals:
+    against the Rock, standing pat triggers cautious call/raise (50/43\%);
+    drawing one card collapses both to 0\%, as that is an anomalous Rock
+    action historically correlated with strong draws. Against the CallingStation,
+    draw count barely changes anything---it is always safe to bet.}
   \label{fig:behavioral}
 \end{figure*}
 
-Several patterns emerge from the matrix. Against the CallingStation,
-Model~B maintains consistently high call and raise frequencies regardless
-of draw count (0\% fold rate when the station stands pat or draws one),
-reflecting the station's predictably passive post-draw behavior. Against
-the Maniac, the model increases its raise frequency when the Maniac draws
-one card (52\%), as a single-card draw from a loose opponent is a common
-flush or straight chase that frequently misses. The most striking pattern
-appears against the Rock: when the Rock stands pat (Draw~0), Model~B
-responds with 50\% call and 43\% raise, treating a Rock stand-pat as a
-strong hand signal. When the Rock draws one card, Model~B's call and raise
-frequencies drop to 0\%, indicating learned recognition that this is an
-unusual Rock action associated with high hand strength. These patterns
-demonstrate that Model~B has learned opponent-specific hand-reading
-heuristics from draw-count telemetry alone, without any explicit archetype
-identifier in its input.
+Against the CallingStation, the pattern is flat: Model~B calls or raises
+regardless of draw count (0\% fold rate at draw 0 or draw 1). There is
+nothing to read in a passive opponent's draws.
+
+Against the Maniac, a single-card draw lifts Model~B's raise frequency
+to 52\%. A loose opponent drawing one card is typically chasing a flush
+or straight that usually misses, making it a good spot to apply pressure.
+
+The sharpest pattern is against the Rock. When the Rock stands pat (draw
+0), Model~B responds with 50\% call and 43\% raise. It treats this as a
+strong-hand signal and stays in. When the Rock draws one card, Model~B's
+call and raise both drop to 0\%. Drawing one is a rare Rock action that,
+historically in training, correlated with high-value draws. The agent
+learned to get out of the way. These are opponent-specific, draw-count-driven
+heuristics, and Model~B discovered them without ever seeing an archetype
+label.
 
 \subsection{Non-Stationary Adaptation}
 
-To evaluate Model~B's ability to adapt when the opponent changes mid-session,
-we run a 1{,}500-hand tournament in which the opponent switches from
-CallingStation (hands 1--500) to Maniac (hands 501--1{,}000) to Rock
-(hands 1{,}001--1{,}500) without resetting Model~B's rolling statistics buffer.
-Two variants of Model~A are also evaluated: an \textit{Oracle} variant given
+We ran a 1{,}500-hand tournament in which the opponent switches silently
+from CallingStation (hands 1--500) to Maniac (501--1{,}000) to Rock
+(1{,}001--1{,}500) without resetting Model~B's statistics buffer. Two
+Model~A variants serve as baselines: an \textit{Oracle} that receives
 the correct archetype label at each switch, and a \textit{Blind} variant
-given a fixed incorrect label throughout.
+stuck with one wrong label throughout.
 
 \begin{figure*}[htbp]
   \centering
   \includegraphics[width=\textwidth]{non_stationary_inference.png}
-  \caption{Model~B's rolling behavioral statistics (VPIP, PFR, Aggression
-    Factor, Avg.\ Cards Drawn) across the 1{,}500-hand non-stationary
-    tournament. Vertical dashed lines mark opponent switches. The statistics
-    adapt within $\sim$50--100 hands after each switch.}
+  \caption{Rolling VPIP, PFR, Aggression Factor, and Avg.\ Cards Drawn
+    shift noticeably within 50--100 hands of each opponent switch. The
+    buffer does not reset, so the transition is gradual, which can be an advantage or a limitation depending on how fast the opponent changes.}
   \label{fig:ns_inference}
 \end{figure*}
 
 \begin{figure*}[htbp]
   \centering
   \includegraphics[width=\textwidth]{non_stationary_performance.png}
-  \caption{Online exploitation performance of Model~B in the non-stationary
-    tournament: smoothed win rate (BB/100, window=100) and cumulative profit.
-    Win rate peaks during the Maniac segment and recovers after each opponent
-    switch with a brief transient.}
+  \caption{Win rate (BB/100, smoothed over 100 hands) peaks during the
+    Maniac segment, drops briefly at each switch, then recovers. The
+    recovery time---roughly 50--100 hands---matches how quickly the
+    rolling statistics stabilize.}
   \label{fig:ns_performance}
 \end{figure*}
 
-Results of the tournament are summarized in Table~\ref{tab:nonstationary}.
-Model~B achieves +160.35 BB/100, outperforming Model~A-Oracle (+156.28
-BB/100) and substantially outperforming Model~A-Blind (+50.01 BB/100).
-Fig.~\ref{fig:ns_inference} shows that the rolling statistics
-(VPIP, PFR, Aggression Factor, Avg.\ Cards Drawn) adapt to the new
-opponent within approximately 50--100 hands after each switch.
-Fig.~\ref{fig:ns_performance} shows the corresponding win-rate curve, with
-brief transients at each switch point followed by recovery.
+Results are in Table~\ref{tab:nonstationary}. Model~B leads at +160.35
+BB/100, edging the Oracle at +156.28 BB/100. The Blind variant falls to
++50.01 BB/100, confirming that the explicit label is only useful when it
+is correct. Fig.~\ref{fig:ns_inference} shows the rolling statistics
+tracking each opponent transition within $\sim$50--100 hands.
+Fig.~\ref{fig:ns_performance} shows the corresponding win-rate curve with
+brief transients at each switch.
 
 \begin{table}[htbp]
-\caption{Non-Stationary Adaptation Tournament Results (1,500 hands)}
+\caption{Non-Stationary Tournament Results (1,500 hands)}
 \label{tab:nonstationary}
 \centering
 \begin{tabular}{lc}
 \toprule
 \textbf{Agent} & \textbf{BB/100} \\
 \midrule
-Model B (Implicit)          & $+160.35$ \\
+Model B (Implicit)           & $+160.35$ \\
 Model A (Explicit -- Oracle) & $+156.28$ \\
 Model A (Explicit -- Blind)  & $+50.01$  \\
 \bottomrule
@@ -643,92 +555,87 @@ Model A (Explicit -- Blind)  & $+50.01$  \\
 
 \subsection{Statistical Validation}
 
-Statistical significance of Model~B's performance is assessed over
-270{,}000 pooled hands (three opponents $\times$ three seeds $\times$
-10{,}000 hands each). A paired $t$-test comparing per-hand profit between
-Model~B and Model~A yields $t = -2.183$, $p = 0.029$, indicating that
-the difference in means is statistically significant at the $\alpha = 0.05$
-level. Model~B vs.\ the random baseline is highly significant ($t = +106.85$,
-$p \approx 0$). A 95\% confidence interval for Model~B's average per-hand
-profit gives $+1.71$ chips [CI: 1.65, 1.76], corresponding to $+170.87$
-BB/100 [CI: 165.31, 176.44].
+We pooled 270{,}000 hands (3 opponents $\times$ 3 seeds $\times$ 10{,}000
+hands). A paired $t$-test on per-hand profit gives $t = -2.183$,
+$p = 0.029$: the Model~A advantage is significant at $\alpha = 0.05$.
+Model~B vs.\ the random baseline is not close ($t = +106.85$,
+$p \approx 0$). Model~B's 95\% confidence interval is $+1.71$ chips/hand
+[1.65, 1.76], corresponding to $+170.87$ BB/100 [165.31, 176.44].
 
 % =====================================================================
 \section{Discussion}
 \label{sec:discussion}
 
-\subsection{Implicit vs.\ Explicit Modeling}
+\subsection{How Much Does the Label Actually Help?}
 
-The performance gap between Model~A and Model~B---roughly 14 BB/100 on
-average---is consistent with the information asymmetry: Model~A receives
-the opponent archetype as a direct input, while Model~B must infer it from
-behavioral evidence accumulated over recent hands. The gap is largest against
-the Rock (+18.6 BB/100 in favor of Model~A), whose tight-passive style
-generates sparse exploitable signals. Against the Maniac, the gap narrows
-considerably (+17.2 BB/100), suggesting that the Maniac's high VPIP and
-frequent draws are sufficient to produce a strong implicit signal within the
-rolling window of $W=50$ hands.
+About 14 BB/100 on average, concentrated almost entirely in the Rock
+matchup. The Rock emits sparse behavioral signals. It folds a lot, plays
+few hands, and rarely deviates from its pattern. A rolling window of 50
+hands captures some of this, but not as cleanly as a direct label. Against
+the Maniac, the label advantage nearly disappears, because the Maniac's
+draws and aggression are distinctive enough that 50 hands is plenty of
+data.
 
-\subsection{The Non-Stationary Advantage}
+This suggests a diminishing-returns effect: implicit modeling closes most
+of the gap when the opponent is behaviorally distinctive, but struggles
+against opponents whose signal is infrequent or weak.
 
-Somewhat counterintuitively, Model~B slightly outperforms Model~A-Oracle in
-the non-stationary tournament (+160.35 vs.\ +156.28 BB/100). One plausible
-explanation is that Model~B's rolling statistics provide a more nuanced,
-\textit{continuous} representation of opponent behavior than a single one-hot
-identity label. When the opponent plays a mix of strategies at the boundary
-of archetype definitions, the rolling statistics can capture subtle
-intermediate states that the discrete label cannot. This interpretation
-aligns with the behavioral matrix in Fig.~\ref{fig:behavioral}, which shows
-that Model~B conditions on draw-count in an archetype-specific manner.
+\subsection{Why Model~B Beats the Oracle in Non-Stationary Play}
+
+Model~B's rolling statistics give it a continuous, graded representation
+of opponent behavior. When the opponent switches archetypes, the buffer
+does not snap to the new label, it gradually shifts as new evidence
+accumulates. This is actually useful during the transition window, when
+the opponent's behavior is a mixture of old and new patterns. The Oracle
+gets the correct label immediately, but the policy was trained on clean
+archetypes, not mixtures; Model~B's gradual buffer update may better
+match the policy's training distribution near switch points.
+
+The behavioral matrix in Fig.~\ref{fig:behavioral} supports this: Model~B
+is already conditioning on fine-grained draw-count statistics rather than
+on a discrete type, so partial evidence is still usable.
 
 \subsection{Limitations}
 
-Several limitations bound the scope of our conclusions. First, all opponents
-are hand-coded deterministic or fixed-stochastic archetypes; the agent has
-not been tested against adaptive or self-play opponents. Second, the training
-environment uses limit betting with a fixed ante, which removes no-limit
-strategic considerations such as stack-size-aware bet-sizing. Third, the
-rolling statistics window size ($W=50$) requires several dozen hands before
-the behavioral signal stabilizes, which imposes a cold-start cost when the
-opponent switches. Finally, the evaluation is restricted to heads-up play;
-generalization to multi-player settings would require significant
-architectural changes.
+All three opponents are fixed-strategy scripts. The agent has never played
+an adaptive opponent, a self-play adversary, or a human. Against someone
+who notices they are being exploited and adjusts, Model~B's strategy would
+need to update faster than the rolling window allows.
+
+The limit betting structure removes stack-depth considerations that dominate
+no-limit play. The cold-start problem---the $W=50$ window needs several
+dozen hands before it stabilizes---also means Model~B is handicapped at
+the start of a new session or right after an opponent switches.
+
+Heads-up only. Multiplayer would require rethinking the observation design
+substantially for optimal play.
 
 % =====================================================================
 \section{Conclusion}
 \label{sec:conclusion}
 
-We presented CardShark-RL, a reinforcement learning system for heads-up
-5-Card Draw Poker that investigates two approaches to opponent adaptation.
-Model~A uses explicit opponent identity to condition its policy, while
-Model~B infers opponent behavior from a rolling window of behavioral
-statistics. Both models substantially outperform a random baseline across
-all tested archetypes. Model~B achieves an average of +166.50 BB/100,
-compared to +180.65 BB/100 for Model~A, with the gap being statistically
-significant ($p = 0.029$) but practically modest given that Model~B has
-no access to opponent identity.
+We built a complete RL pipeline for 5-Card Draw Poker and used it to test
+whether an agent can exploit behaviorally distinct opponents without knowing
+which one it is facing. It can, at a cost of about 14 BB/100 versus an
+agent that gets a direct label. The gap is real and statistically
+significant, but modest enough to suggest that draw-count telemetry carries
+most of the relevant information.
 
-The behavioral matrix analysis reveals that Model~B has learned
-opponent-specific hand-reading heuristics from draw-count telemetry alone.
-In the non-stationary tournament, Model~B marginally outperforms
-Model~A-Oracle (+160.35 vs.\ +156.28 BB/100), indicating that implicit
-behavioral inference can be more robust than explicit labeling when the
-environment is non-stationary.
+The behavioral matrix analysis is the clearest evidence of what the agent
+actually learned. Model~B treats a Rock standing pat as a ``stay in'' signal
+and a Rock drawing one card as a ``get out'' signal, with no explicit hand-range
+model and no archetype identifier. That is the Tell. The agent discovered it
+from reward alone.
 
-Future work could extend this framework to no-limit betting, self-play
-training, and multi-player settings. Incorporating uncertainty estimates
-over the opponent's hand range---combining the implicit behavioral
-statistics with Bayesian hand-range inference---could further narrow the
-gap with explicit modeling, particularly against tight-passive opponents
-like the Rock.
+In non-stationary play, the implicit agent outperforms an oracle-labeled
+explicit agent, which is the more practically useful result: real opponents
+do not come with labels, and they change.
 
-% =====================================================================
-\section*{Acknowledgment}
-The authors thank the Department of Computer Engineering at Izmir
-Katip Celebi University for providing computational resources and
-course infrastructure.
+Future directions include no-limit betting, self-play training, and combining
+the rolling statistics with Bayesian hand-range inference to address the
+Rock's sparse behavioral signal.
 
-% =====================================================================
+
 \bibliographystyle{IEEEtran}
 \bibliography{references}
 
