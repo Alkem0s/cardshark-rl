@@ -1,5 +1,8 @@
 # CardShark-RL: Reinforcement Learning of Behavioral Tells in 5-Card Draw Poker
 
+**Authors:** Alkım Gönenç Efe (220401050), Sarp Sünbül (230401114), Damla Parlakyıldız (220401067)  
+**Affiliation:** Department of Computer Engineering, İzmir Katip Çelebi University, İzmir, Turkey
+
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
 [![Gymnasium](https://img.shields.io/badge/gymnasium-0.28.1-green.svg)](https://gymnasium.farama.org/)
 [![Stable-Baselines3](https://img.shields.io/badge/stable--baselines3-2.1.0-orange.svg)](https://stable-baselines3.readthedocs.io/)
