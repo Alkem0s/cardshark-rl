@@ -9,6 +9,7 @@ TEST_SCRIPTS = [
     "test_opponent_tracker.py",
     "test_multi_env.py",
     "test_gym_wrapper.py",
+    "test_superhuman.py",
 ]
 
 def main():

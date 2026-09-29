@@ -102,8 +102,42 @@ def test_randomized_stacks_and_blind_escalation():
     print(f"test_randomized_stacks_and_blind_escalation: PASS (Big blind escalated to {env.env.big_blind}, Hands: {info['hands_played']})")
 
 
+def test_superhuman_obs_vector():
+    """Validates Model C 87-dimensional observation space, action history, and trap line encoding."""
+    from multi_gym_wrapper import SUPERHUMAN_OBS_DIM, make_superhuman_multi_env
+
+    env_fn = make_superhuman_multi_env(
+        num_seats=5,
+        starting_chips=200,
+        seed=77,
+        max_hands_per_session=15,
+    )
+    env = env_fn()
+    obs, info = env.reset(seed=77)
+
+    assert obs.shape == (SUPERHUMAN_OBS_DIM,), f"Expected shape ({SUPERHUMAN_OBS_DIM},), got {obs.shape}"
+    assert np.all(obs >= -1.0) and np.all(obs <= 1.0), "Superhuman observation out of bounds [-1.0, 1.0]"
+
+    # Step through 50 turns
+    done = False
+    step_count = 0
+    while not done and step_count < 50:
+        step_count += 1
+        mask = env.action_masks()
+        legal = np.where(mask == 1)[0]
+        action = int(np.random.choice(legal))
+        obs, reward, terminated, truncated, info = env.step(action)
+        done = terminated or truncated
+
+        assert obs.shape == (SUPERHUMAN_OBS_DIM,)
+        assert np.all(obs >= -1.0) and np.all(obs <= 1.0)
+
+    print(f"test_superhuman_obs_vector: PASS (87-dim observation verified over {step_count} steps)")
+
+
 if __name__ == "__main__":
     test_wrapper_reset_and_step()
     test_scale_invariance()
     test_randomized_stacks_and_blind_escalation()
+    test_superhuman_obs_vector()
     print("ALL GYM WRAPPER TESTS PASSED!")

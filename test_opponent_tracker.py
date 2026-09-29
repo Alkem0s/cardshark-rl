@@ -79,8 +79,34 @@ def test_relative_vector():
     print("test_relative_vector: PASS")
 
 
+def test_decaying_recency_and_tilt():
+    profile = SeatProfile(seat_idx=3)
+    # 1. Start with 15 passive hands: mostly folds (Rock profile)
+    for _ in range(15):
+        profile.record_hand(vpip=False, pfr=False, post_draw_raised=False, faced_raise_and_folded=True, cards_drawn=None)
+
+    is_tilting, label = profile.detect_tilt(threshold=0.25)
+    assert not is_tilting, f"Should be stable, got {label}"
+    initial_delta = profile.get_recency_delta()
+
+    # 2. Sudden tilt: 3 hyper-aggressive hands in a row
+    for _ in range(3):
+        profile.record_hand(vpip=True, pfr=True, post_draw_raised=True, faced_raise_and_folded=False, cards_drawn=1)
+
+    is_tilting, label = profile.detect_tilt(threshold=0.25)
+    recency_delta = profile.get_recency_delta()
+
+    # Micro tracker should jump much faster than macro tracker
+    assert is_tilting, f"Expected tilt alert, but got {label} with delta {recency_delta}"
+    assert "Aggressive Tilt" in label
+    assert recency_delta > 0.25, f"Expected delta > 0.25, got {recency_delta}"
+    assert profile.micro_vpip_tracker.posterior_mean > profile.vpip_tracker.posterior_mean
+    print("test_decaying_recency_and_tilt: PASS (Detected tilt in 3 hands)")
+
+
 if __name__ == "__main__":
     test_prior_stability()
     test_bayesian_updates()
     test_relative_vector()
+    test_decaying_recency_and_tilt()
     print("ALL OPPONENT TRACKER TESTS PASSED!")

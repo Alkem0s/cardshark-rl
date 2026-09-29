@@ -42,25 +42,64 @@ class BetaBinomialTracker:
         self.trials = 0
 
 
+class DecayingBetaBinomialTracker:
+    """Tracks dynamic short-term habit shifts with exponential forgetting (lambda ~ 0.92).
+
+    Effective half-life is ~10 hands:
+        N_t = lambda * N_{t-1} + 1.0
+        K_t = lambda * K_{t-1} + (1.0 if success else 0.0)
+    Posterior mean: (alpha0 + K_t) / (alpha0 + beta0 + N_t)
+    """
+    def __init__(self, prior_mean: float, prior_weight: float = 3.0, decay_rate: float = 0.92):
+        self.alpha0 = float(prior_mean * prior_weight)
+        self.beta0 = float((1.0 - prior_mean) * prior_weight)
+        self.decay_rate = float(decay_rate)
+        self.s_decayed = 0.0
+        self.n_decayed = 0.0
+
+    def update(self, success: bool):
+        self.n_decayed = self.decay_rate * self.n_decayed + 1.0
+        self.s_decayed = self.decay_rate * self.s_decayed + (1.0 if success else 0.0)
+
+    @property
+    def posterior_mean(self) -> float:
+        total_weight = self.alpha0 + self.beta0 + self.n_decayed
+        if total_weight <= 0.0:
+            return 0.5
+        return (self.alpha0 + self.s_decayed) / total_weight
+
+    @property
+    def posterior_variance(self) -> float:
+        a = self.alpha0 + self.s_decayed
+        b = self.beta0 + (self.n_decayed - self.s_decayed)
+        total = a + b
+        if total <= 0.0:
+            return 0.0
+        return (a * b) / (total ** 2 * (total + 1.0))
+
+    def reset(self):
+        self.s_decayed = 0.0
+        self.n_decayed = 0.0
+
+
 class SeatProfile:
-    """Tracks all behavioral habits for a single physical table seat."""
+    """Tracks all behavioral habits for a single physical table seat using dual-timescale Bayesian models."""
     def __init__(self, seat_idx: int):
         self.seat_idx = seat_idx
 
-        # 1. VPIP (Voluntary Put Money In Pot): prior ~28%
+        # 1. Lifetime Macro Trackers (Beta-Binomial, prior weight 5.0)
         self.vpip_tracker = BetaBinomialTracker(prior_mean=0.28, prior_weight=5.0)
-
-        # 2. PFR (Pre-Draw Raise): prior ~15%
         self.pfr_tracker = BetaBinomialTracker(prior_mean=0.15, prior_weight=5.0)
-
-        # 3. Post-draw Aggression Ratio (Raises vs Total Post-Draw actions): prior ~30%
         self.af_tracker = BetaBinomialTracker(prior_mean=0.30, prior_weight=5.0)
-
-        # 4. Fold to Pressure (Folds when facing a bet/raise): prior ~50%
         self.fold_pressure_tracker = BetaBinomialTracker(prior_mean=0.50, prior_weight=5.0)
 
-        # 5. Average cards drawn (normalized 0 to 1): prior ~0.40 (2 cards drawn)
-        # Using a weighted running average with equivalent prior strength of 5 hands
+        # 2. Dynamic Micro Recency Trackers (Exponential Decay lambda = 0.90, horizon ~10 hands)
+        self.micro_vpip_tracker = DecayingBetaBinomialTracker(prior_mean=0.28, prior_weight=2.0, decay_rate=0.90)
+        self.micro_pfr_tracker = DecayingBetaBinomialTracker(prior_mean=0.15, prior_weight=2.0, decay_rate=0.90)
+        self.micro_af_tracker = DecayingBetaBinomialTracker(prior_mean=0.30, prior_weight=2.0, decay_rate=0.90)
+        self.micro_fold_tracker = DecayingBetaBinomialTracker(prior_mean=0.50, prior_weight=2.0, decay_rate=0.90)
+
+        # 3. Average cards drawn (normalized 0 to 1): prior ~0.40 (2 cards drawn)
         self.prior_draw = 0.40
         self.draw_prior_weight = 5.0
         self.draw_sum = 0.0
@@ -78,14 +117,22 @@ class SeatProfile:
     ):
         """Update posterior beliefs from actions observed in a hand."""
         self.hands_observed += 1
+
+        # Update macro lifetime trackers
         self.vpip_tracker.update(vpip)
         self.pfr_tracker.update(pfr)
 
+        # Update micro recency trackers
+        self.micro_vpip_tracker.update(vpip)
+        self.micro_pfr_tracker.update(pfr)
+
         if post_draw_raised is not None:
             self.af_tracker.update(post_draw_raised)
+            self.micro_af_tracker.update(post_draw_raised)
 
         if faced_raise_and_folded is not None:
             self.fold_pressure_tracker.update(faced_raise_and_folded)
+            self.micro_fold_tracker.update(faced_raise_and_folded)
 
         if cards_drawn is not None:
             self.draw_sum += (cards_drawn / 5.0)
@@ -98,7 +145,7 @@ class SeatProfile:
         return (self.prior_draw * self.draw_prior_weight + self.draw_sum) / total_weight
 
     def get_feature_vector(self) -> List[float]:
-        """Returns 5 behavioral features [VPIP, PFR, AF, Fold_Pressure, Avg_Draw]."""
+        """Returns 5 behavioral features [VPIP, PFR, AF, Fold_Pressure, Avg_Draw] for Model B compatibility."""
         return [
             float(np.clip(self.vpip_tracker.posterior_mean, 0.0, 1.0)),
             float(np.clip(self.pfr_tracker.posterior_mean, 0.0, 1.0)),
@@ -106,6 +153,27 @@ class SeatProfile:
             float(np.clip(self.fold_pressure_tracker.posterior_mean, 0.0, 1.0)),
             float(np.clip(self.avg_draw_normalized, 0.0, 1.0)),
         ]
+
+    def get_recency_delta(self) -> float:
+        """Returns the sudden strategy shift / tilt delta in [-1.0, 1.0].
+        Positive indicates sudden aggressive tilt (higher VPIP + PFR + AF than lifetime).
+        Negative indicates sudden tightening / freezing.
+        """
+        delta_vpip = self.micro_vpip_tracker.posterior_mean - self.vpip_tracker.posterior_mean
+        delta_pfr = self.micro_pfr_tracker.posterior_mean - self.pfr_tracker.posterior_mean
+        delta_af = self.micro_af_tracker.posterior_mean - self.af_tracker.posterior_mean
+        combined = delta_vpip + delta_pfr + delta_af
+        return float(np.clip(combined, -1.0, 1.0))
+
+
+    def detect_tilt(self, threshold: float = 0.25) -> Tuple[bool, str]:
+        """Detects whether this seat is undergoing a significant behavioral shift."""
+        delta = self.get_recency_delta()
+        if delta > threshold:
+            return True, f"Aggressive Tilt (+{delta:.2f})"
+        elif delta < -threshold:
+            return True, f"Rock Freeze ({delta:.2f})"
+        return False, "Stable"
 
     def classify_archetype(self) -> Tuple[str, str]:
         """Infers opponent archetype and returns (archetype_name, actionable_exploit_advice)."""
@@ -132,6 +200,10 @@ class SeatProfile:
         self.pfr_tracker.reset()
         self.af_tracker.reset()
         self.fold_pressure_tracker.reset()
+        self.micro_vpip_tracker.reset()
+        self.micro_pfr_tracker.reset()
+        self.micro_af_tracker.reset()
+        self.micro_fold_tracker.reset()
         self.draw_sum = 0.0
         self.draw_count = 0
         self.hands_observed = 0
@@ -216,6 +288,12 @@ class TableOpponentTracker:
             features.extend(slot_features)
 
         return features
+
+    def get_seat_recency_delta(self, seat_idx: int) -> float:
+        """Returns the dynamic tilt / strategy shift delta for seat_idx."""
+        if seat_idx in self.profiles:
+            return self.profiles[seat_idx].get_recency_delta()
+        return 0.0
 
     def reset_all(self):
         for profile in self.profiles.values():

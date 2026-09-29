@@ -50,6 +50,11 @@ class PlayerState:
         self.draw_count = -1          # -1 before draw phase, 0-5 after
         self.has_acted = False
         self.is_all_in = False
+        # Model C Intra-Hand Sequence Memory
+        self.pre_draw_action = -1     # Last pre-draw action index (-1 if not acted)
+        self.post_draw_action = -1    # Last post-draw action index (-1 if not acted)
+        self.pre_draw_bet_size = 0    # Cumulative chips committed pre-draw
+        self.post_draw_bet_size = 0   # Cumulative chips committed post-draw
 
     def reset_for_hand(self):
         self.hand = []
@@ -60,6 +65,10 @@ class PlayerState:
         self.draw_count = -1
         self.has_acted = False
         self.is_all_in = (self.chips == 0)
+        self.pre_draw_action = -1
+        self.post_draw_action = -1
+        self.pre_draw_bet_size = 0
+        self.post_draw_bet_size = 0
 
 
 class MultiDrawPokerEnv:
@@ -321,6 +330,10 @@ class MultiDrawPokerEnv:
         if action == A_FOLD:
             player.folded = True
             player.bet_to_call = 0
+            if self.phase == PHASE_PRE_DRAW:
+                player.pre_draw_action = A_FOLD
+            elif self.phase == PHASE_POST_DRAW:
+                player.post_draw_action = A_FOLD
             return
 
         btc = player.bet_to_call
@@ -357,6 +370,13 @@ class MultiDrawPokerEnv:
 
         if player.chips == 0:
             player.is_all_in = True
+
+        if self.phase == PHASE_PRE_DRAW:
+            player.pre_draw_action = action
+            player.pre_draw_bet_size = player.round_invested
+        elif self.phase == PHASE_POST_DRAW:
+            player.post_draw_action = action
+            player.post_draw_bet_size = player.round_invested
 
         if is_raise:
             new_bet = player.round_invested
