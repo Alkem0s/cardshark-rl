@@ -1,7 +1,11 @@
 """
 test_opponent_tracker.py — Unit test for opponent_tracker.py.
 """
-from opponent_tracker import TableOpponentTracker, SeatProfile
+import os
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from rl.opponent_tracker import TableOpponentTracker, SeatProfile
 
 
 def test_prior_stability():

@@ -1,12 +1,16 @@
 """
 test_multi_env.py — Unit & smoke test for MultiDrawPokerEnv.
 """
-from multi_draw_poker_env import (
+import os
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from game.multi_draw_poker_env import (
     MultiDrawPokerEnv, A_FOLD, A_CALL, A_MIN_RAISE, A_ALL_IN,
     PHASE_PRE_DRAW, PHASE_DRAW, PHASE_POST_DRAW, PHASE_SHOWDOWN,
     TOTAL_ACTIONS, A_DRAW_START
 )
-from multi_opponents import make_opponent_by_id, CallingStation, Maniac
+from game.multi_opponents import make_opponent_by_id, CallingStation, Maniac
 
 
 def test_basic_session_and_step():

@@ -11,10 +11,16 @@ import numpy as np
 from abc import ABC, abstractmethod
 from typing import List
 
-from card_utils import (
-    rank_of, suit_of, hand_category, get_pairs_info,
-    has_flush_draw, has_straight_draw, evaluate_hand,
-)
+try:
+    from game.card_utils import (
+        rank_of, suit_of, hand_category, get_pairs_info,
+        has_flush_draw, has_straight_draw, evaluate_hand,
+    )
+except ImportError:
+    from card_utils import (
+        rank_of, suit_of, hand_category, get_pairs_info,
+        has_flush_draw, has_straight_draw, evaluate_hand,
+    )
 
 
 class Opponent(ABC):

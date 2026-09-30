@@ -129,14 +129,14 @@ def load_best_params() -> dict:
     result = {}
 
     # 1. Load Model A
-    path_a = "best_params_a.json"
+    path_a = "configs/best_params_a.json" if os.path.exists("configs/best_params_a.json") else "best_params_a.json"
     if os.path.exists(path_a):
         with open(path_a) as f:
             data = json.load(f)
             result["model_a"] = data.get("params", data)
 
     # 2. Load Model B
-    path_b = "best_params_b.json"
+    path_b = "configs/best_params_b.json" if os.path.exists("configs/best_params_b.json") else "best_params_b.json"
     if os.path.exists(path_b):
         with open(path_b) as f:
             data = json.load(f)

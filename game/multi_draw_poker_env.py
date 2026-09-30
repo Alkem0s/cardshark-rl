@@ -14,8 +14,12 @@ from __future__ import annotations
 import numpy as np
 from typing import Dict, List, Set, Tuple, Optional
 
-from card_utils import Deck, evaluate_hand, rank_of, suit_of, hand_category
-from side_pot import calculate_side_pots, resolve_showdown_payouts, PotTier
+try:
+    from game.card_utils import Deck, evaluate_hand, rank_of, suit_of, hand_category
+    from game.side_pot import calculate_side_pots, resolve_showdown_payouts, PotTier
+except ImportError:
+    from card_utils import Deck, evaluate_hand, rank_of, suit_of, hand_category
+    from side_pot import calculate_side_pots, resolve_showdown_payouts, PotTier
 
 
 # Action constants

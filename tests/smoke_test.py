@@ -1,15 +1,16 @@
 """smoke_test.py — Quick sanity check for the CardShark-RL codebase."""
 import sys
 import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 print("=== CardShark-RL Smoke Test ===\n")
 
 # 1. Imports
 print("[1/5] Testing imports...", end=" ", flush=True)
-from card_utils import evaluate_hand, Deck, hand_category_name
-from opponents import CallingStation, Maniac, Rock, make_random_opponent
-from draw_poker_env import DrawPokerEnv
-from gym_wrapper import DrawPokerGymEnv, mask_fn
+from game.card_utils import evaluate_hand, Deck, hand_category_name
+from game.opponents import CallingStation, Maniac, Rock, make_random_opponent
+from game.draw_poker_env import DrawPokerEnv
+from rl.gym_wrapper import DrawPokerGymEnv, mask_fn
 import numpy as np
 print("OK")
 

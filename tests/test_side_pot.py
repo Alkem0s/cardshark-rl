@@ -1,7 +1,11 @@
 """
 test_side_pot.py — Unit test for side_pot.py.
 """
-from side_pot import calculate_side_pots, resolve_showdown_payouts
+import os
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from game.side_pot import calculate_side_pots, resolve_showdown_payouts, PotTier
 
 
 def test_simple_heads_up():
@@ -88,8 +92,6 @@ def test_split_pot_with_odd_chip():
     assert payouts[1] == 10
     assert payouts[2] == 10
 
-    # Total pot with remainder: 31 chips split 3 ways -> 10, 10, 10 + 1 remainder to seat 0
-    from side_pot import PotTier
     pots = [PotTier(amount=31, eligible={0, 1, 2})]
     payouts, _ = resolve_showdown_payouts(pots, scores, seat_order_from_button=[1, 2, 0])
     # Button is before 1, so seat 1 gets the odd chip

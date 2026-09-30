@@ -15,12 +15,18 @@ import argparse
 import numpy as np
 from typing import Dict, List, Optional
 
+import sys
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 from sb3_contrib import MaskablePPO
-from multi_gym_wrapper import MultiDrawPokerGymEnv, multi_mask_fn
-from multi_draw_poker_env import (
+from rl.multi_gym_wrapper import MultiDrawPokerGymEnv, multi_mask_fn
+from game.multi_draw_poker_env import (
     A_FOLD, A_CALL, A_MIN_RAISE, A_HALF_POT, A_POT, A_ALL_IN, A_DRAW_START
 )
-from multi_opponents import ARCHETYPE_CLASSES, NUM_ARCHETYPES
+from game.multi_opponents import ARCHETYPE_CLASSES, NUM_ARCHETYPES
 
 
 def evaluate_tournament_sessions(
@@ -186,7 +192,7 @@ if __name__ == "__main__":
     parser.add_argument("--model-path", type=str, default="models/model_b_multiplayer.zip")
     parser.add_argument("--sessions", type=int, default=30)
     parser.add_argument("--chips", type=int, default=200)
-    parser.add_argument("--freezeout", action="store_true", help="Escalate blinds to guarantee 100% elimination down to 1 winner")
+    parser.add_argument("--freezeout", action="store_true", help="Escalate blinds to guarantee full elimination down to 1 winner")
     parser.add_argument("--randomize-stacks", action="store_true", help="Start sessions with randomized stack depths")
     parser.add_argument("--test-scale", action="store_true", help="Run scale invariance across buy-in sizes")
     args = parser.parse_args()

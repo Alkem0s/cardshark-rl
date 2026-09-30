@@ -1,9 +1,13 @@
 """
 test_gym_wrapper.py — Unit test & validation for MultiDrawPokerGymEnv.
 """
+import os
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 import numpy as np
-from multi_gym_wrapper import MultiDrawPokerGymEnv, OBS_DIM
-from multi_draw_poker_env import TOTAL_ACTIONS
+from rl.multi_gym_wrapper import MultiDrawPokerGymEnv, OBS_DIM, SUPERHUMAN_OBS_DIM, make_superhuman_multi_env
+from game.multi_draw_poker_env import TOTAL_ACTIONS
 
 
 def test_wrapper_reset_and_step():
@@ -104,8 +108,6 @@ def test_randomized_stacks_and_blind_escalation():
 
 def test_superhuman_obs_vector():
     """Validates Model C 87-dimensional observation space, action history, and trap line encoding."""
-    from multi_gym_wrapper import SUPERHUMAN_OBS_DIM, make_superhuman_multi_env
-
     env_fn = make_superhuman_multi_env(
         num_seats=5,
         starting_chips=200,

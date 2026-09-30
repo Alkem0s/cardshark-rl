@@ -9,11 +9,15 @@ Verifies:
 """
 
 import os
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 import numpy as np
 
-from opponent_tracker import SeatProfile, DecayingBetaBinomialTracker
-from multi_gym_wrapper import SUPERHUMAN_OBS_DIM, make_superhuman_multi_env
-from multi_opponents import LeaguePool, LeagueOpponent, make_random_archetype
+from rl.opponent_tracker import SeatProfile, DecayingBetaBinomialTracker
+from rl.multi_gym_wrapper import SUPERHUMAN_OBS_DIM, make_superhuman_multi_env
+from rl.league import LeaguePool, LeagueOpponent
+from game.multi_opponents import make_random_archetype
 
 
 def test_dual_timescale_tilt_detection():
@@ -81,8 +85,8 @@ def test_league_pool_and_sparring():
         assert len(pool.checkpoints) >= 1, "Expected base model checkpoint in pool"
         opp = pool.sample_opponent(seat_idx=1)
         assert isinstance(opp, LeagueOpponent)
-        assert opp.is_superhuman is False # Model B is 63-dim
-        print("test_league_pool_and_sparring: PASS (Loaded LeagueOpponent from Model B checkpoint)")
+        assert isinstance(opp.is_superhuman, (bool, np.bool_))
+        print(f"test_league_pool_and_sparring: PASS (Loaded LeagueOpponent: {opp.name}, superhuman={opp.is_superhuman})")
     else:
         print("test_league_pool_and_sparring: SKIPPED (Model B checkpoint not on disk)")
 

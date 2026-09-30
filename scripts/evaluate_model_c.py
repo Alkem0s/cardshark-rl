@@ -14,12 +14,19 @@ import argparse
 import numpy as np
 from typing import Dict, List, Optional, Tuple
 
+import sys
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 from sb3_contrib import MaskablePPO
-from multi_gym_wrapper import MultiDrawPokerGymEnv, make_superhuman_multi_env, SUPERHUMAN_OBS_DIM, OBS_DIM
-from multi_draw_poker_env import (
+from rl.multi_gym_wrapper import MultiDrawPokerGymEnv, make_superhuman_multi_env, SUPERHUMAN_OBS_DIM, OBS_DIM
+from game.multi_draw_poker_env import (
     A_FOLD, A_CALL, A_MIN_RAISE, A_HALF_POT, A_POT, A_ALL_IN,
 )
-from multi_opponents import LeagueOpponent, make_random_archetype, make_opponent_by_id
+from rl.league import LeagueOpponent
+from game.multi_opponents import make_random_archetype, make_opponent_by_id
 
 
 def evaluate_superhuman_sessions(

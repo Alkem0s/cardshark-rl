@@ -42,15 +42,19 @@ import optuna
 from optuna.exceptions import TrialPruned
 from optuna.pruners import MedianPruner
 
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.wrappers import ActionMasker
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 
-from multi_gym_wrapper import make_multi_env, multi_mask_fn
-from evaluate_multi import evaluate_tournament_sessions
-from train_multi import linear_schedule
+from rl.multi_gym_wrapper import make_multi_env, multi_mask_fn
+from scripts.evaluate_model_b import evaluate_tournament_sessions
+from scripts.train_model_c import linear_schedule
 
 
 # ---------------------------------------------------------------------------
@@ -78,8 +82,11 @@ def setup_hpo_logger(log_file: str = "results/hpo_multi_log.txt") -> logging.Log
     return logger
 
 
-def save_best_params(params: dict, filepath: str = "best_params_multi.json"):
+def save_best_params(params: dict, filepath: str = "configs/best_params_c.json"):
     """Atomically saves the best hyperparameters as a JSON file."""
+    dirname = os.path.dirname(filepath)
+    if dirname:
+        os.makedirs(dirname, exist_ok=True)
     tmp_path = filepath + ".tmp"
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(params, f, indent=2)
@@ -148,7 +155,7 @@ def create_objective(
     n_envs: int = 16,
     eval_sessions: int = 40,
     seed: int = 42,
-    best_params_path: str = "best_params_multi.json",
+    best_params_path: str = "configs/best_params_c.json",
     logger: Optional[logging.Logger] = None,
 ):
     best_score = -float("inf")
@@ -331,7 +338,7 @@ def run_multi_hpo(
     n_envs: int = 8,
     eval_sessions: int = 25,
     seed: int = 42,
-    output_params: str = "best_params_multi.json",
+    output_params: str = "configs/best_params_c.json",
     log_file: str = "results/hpo_multi_log.txt",
     smoke_test: bool = False,
 ):
@@ -387,7 +394,7 @@ if __name__ == "__main__":
     parser.add_argument("--timesteps", type=int, default=150_000, help="Timesteps per trial (default: 150,000)")
     parser.add_argument("--n-envs", type=int, default=16, help="Number of parallel CPU environments per trial (default: 16)")
     parser.add_argument("--eval-sessions", type=int, default=40, help="Sessions per final trial evaluation (default: 40)")
-    parser.add_argument("--output-params", type=str, default="best_params_multi.json")
+    parser.add_argument("--output-params", type=str, default="configs/best_params_c.json")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--smoke-test", action="store_true")
     args = parser.parse_args()

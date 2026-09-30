@@ -23,12 +23,21 @@ import functools
 import numpy as np
 from typing import Dict, List, Optional
 
-from pettingzoo import AECEnv
-from pettingzoo.utils.agent_selector import agent_selector
-from gymnasium import spaces
+try:
+    from pettingzoo import AECEnv
+    from pettingzoo.utils.agent_selector import agent_selector
+    from gymnasium import spaces
+except ImportError:
+    AECEnv = object
+    agent_selector = None
+    spaces = None
 
-from card_utils import Deck, evaluate_hand, rank_of, normalize_rank, normalize_suit, normalize_hand_score, hand_category
-from opponents import Opponent, make_opponent, make_random_opponent, NUM_ARCHETYPES
+try:
+    from game.card_utils import Deck, evaluate_hand, rank_of, normalize_rank, normalize_suit, normalize_hand_score, hand_category
+    from game.opponents import Opponent, make_opponent, make_random_opponent, NUM_ARCHETYPES
+except ImportError:
+    from card_utils import Deck, evaluate_hand, rank_of, normalize_rank, normalize_suit, normalize_hand_score, hand_category
+    from opponents import Opponent, make_opponent, make_random_opponent, NUM_ARCHETYPES
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,26 @@
+{
+  "fitness_score": 15.93,
+  "bb_per_100": -17.82,
+  "survival_rate_pct": 22.5,
+  "first_place_rate_pct": 22.5,
+  "avg_chip_share_pct": 17.6,
+  "learning_rate": 0.00021751925829069791,
+  "lr_schedule": "linear",
+  "n_steps": 1536,
+  "batch_size": 64,
+  "n_epochs": 7,
+  "gamma": 0.9957953085381028,
+  "gae_lambda": 0.9226630747961578,
+  "clip_range": 0.18506790587712388,
+  "ent_coef": 0.007640587073106495,
+  "vf_coef": 0.5315853861478892,
+  "max_grad_norm": 0.5722662427701785,
+  "fold_penalty": 0.21500747341448734,
+  "blind_escalation": 15,
+  "net_arch": [
+    256,
+    256,
+    256,
+    256
+  ]
+}

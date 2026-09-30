@@ -3,85 +3,97 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>P2P 5-Card Draw - Pro Edition</title>
+    <title>CardShark-RL 5-Card Draw Poker</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        :root { --table-green: #2d6a4f; --bg-dark: #1b1b1b; --text-light: #f8f9fa; }
+        :root { --table-green: #1b4332; --felt-green: #2d6a4f; --bg-dark: #0f1416; --text-light: #f8f9fa; --gold: #ffb703; --card-gold: #ff9f1c; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg-dark); color: var(--text-light); margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
-        h1 { color: #52b788; margin-bottom: 5px; }
-        .panel { background: #212529; padding: 20px; border-radius: 8px; margin-bottom: 20px; width: 100%; max-width: 600px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-        button { background: #40916c; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; margin: 3px; }
-        button:hover { background: #52b788; }
-        button:disabled { background: #555; cursor: not-allowed; }
-        input { padding: 10px; border-radius: 4px; border: 1px solid #444; background: #333; color: white; margin-bottom: 10px; width: calc(100% - 22px); }
+        h1 { color: #52b788; margin-bottom: 5px; font-weight: 800; letter-spacing: 1px; }
+        .subtitle { color: #95d5b2; font-size: 0.9em; margin-bottom: 20px; }
+        .panel { background: #1a2024; padding: 25px; border-radius: 12px; margin-bottom: 20px; width: 100%; max-width: 600px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); border: 1px solid #2d3748; }
+        button { background: #2d6a4f; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 700; margin: 4px; transition: all 0.15s ease; font-size: 13px; }
+        button:hover { background: #40916c; transform: translateY(-1px); }
+        button:disabled { background: #4a5568; cursor: not-allowed; transform: none; }
+        input, select { padding: 10px; border-radius: 6px; border: 1px solid #4a5568; background: #2d3748; color: white; margin-bottom: 12px; width: calc(100% - 22px); font-size: 14px; }
         
-        #game-board { display: none; background-color: var(--table-green); border: 10px solid #1e4620; border-radius: 50px; padding: 30px; width: 100%; max-width: 800px; text-align: center; position: relative; }
-        .info-bar { display: flex; justify-content: space-between; background: rgba(0,0,0,0.5); padding: 10px 20px; border-radius: 20px; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
+        #game-board { display: none; background: radial-gradient(circle, var(--felt-green) 0%, var(--table-green) 100%); border: 14px solid #081c15; border-radius: 60px; padding: 30px; width: 100%; max-width: 860px; text-align: center; position: relative; box-shadow: 0 16px 48px rgba(0,0,0,0.8), inset 0 0 40px rgba(0,0,0,0.4); }
+        .info-bar { display: flex; justify-content: space-between; background: rgba(0,0,0,0.65); padding: 12px 24px; border-radius: 30px; margin-bottom: 25px; flex-wrap: wrap; gap: 12px; border: 1px solid rgba(255,255,255,0.1); }
         
-        #winner-banner { display: none; background: #ffb703; color: #000; padding: 15px; border-radius: 8px; font-weight: bold; font-size: 1.2em; margin-bottom: 20px; animation: pop 0.3s ease-out; }
+        #winner-banner { display: none; background: var(--gold); color: #000; padding: 16px; border-radius: 10px; font-weight: 800; font-size: 1.25em; margin-bottom: 20px; animation: pop 0.3s ease-out; box-shadow: 0 4px 16px rgba(255,183,3,0.4); }
         @keyframes pop { 0% { transform: scale(0.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 
-        .opponents-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; margin-bottom: 30px; }
-        .player-badge { background: #111; padding: 10px; border-radius: 8px; border: 2px solid #333; min-width: 120px; position: relative; }
-        .player-badge.active-turn { border-color: #ffb703; box-shadow: 0 0 10px #ffb703; }
-        .player-badge.folded { opacity: 0.5; }
-        .player-badge.winner { border-color: #06d6a0; box-shadow: 0 0 15px #06d6a0; }
-        .dealer-btn { position: absolute; top: -10px; right: -10px; background: white; color: black; border-radius: 50%; width: 24px; height: 24px; font-size: 12px; font-weight: bold; display: flex; align-items: center; justify-content: center; border: 2px solid #000; }
-        .all-in-tag { color: #d90429; font-weight: bold; font-size: 12px; }
+        .opponents-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 18px; margin-bottom: 30px; }
+        .player-badge { background: #161b22; padding: 14px; border-radius: 10px; border: 2px solid #30363d; min-width: 130px; position: relative; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+        .player-badge.active-turn { border-color: var(--gold); box-shadow: 0 0 16px var(--gold); }
+        .player-badge.folded { opacity: 0.45; }
+        .player-badge.winner { border-color: #06d6a0; box-shadow: 0 0 20px #06d6a0; }
+        .dealer-btn { position: absolute; top: -10px; right: -10px; background: white; color: black; border-radius: 50%; width: 24px; height: 24px; font-size: 12px; font-weight: 900; display: flex; align-items: center; justify-content: center; border: 2px solid #000; }
+        .all-in-tag { color: #d90429; font-weight: 900; font-size: 12px; }
 
-        .hand { display: flex; justify-content: center; gap: 5px; margin-top: 10px; min-height: 90px; }
-        .card { background: white; color: black; width: 50px; height: 75px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold; cursor: pointer; user-select: none; transition: transform 0.1s; box-shadow: 1px 1px 3px rgba(0,0,0,0.5); }
-        .card.selected { transform: translateY(-10px); border: 2px solid #ff9f1c; }
-        .card.hidden { background: #003049; background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.1) 5px, rgba(255,255,255,0.1) 10px); border: 2px solid #fff; color: transparent; }
+        .hand { display: flex; justify-content: center; gap: 8px; margin-top: 12px; min-height: 95px; }
+        .card { background: white; color: black; width: 55px; height: 82px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: bold; cursor: pointer; user-select: none; transition: transform 0.15s, box-shadow 0.15s; box-shadow: 2px 3px 8px rgba(0,0,0,0.6); }
+        .card.selected { transform: translateY(-12px); border: 3px solid var(--card-gold); box-shadow: 0 6px 16px rgba(255,159,28,0.5); }
+        .card.hidden { background: #003049; background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.12) 5px, rgba(255,255,255,0.12) 10px); border: 2px solid #fff; color: transparent; }
         .red { color: #d90429; }
-        .black { color: #000000; }
+        .black { color: #111; }
         
-        #controls { background: #111; padding: 15px; border-radius: 8px; margin-top: 20px; display: flex; justify-content: center; align-items: center; gap: 10px; flex-wrap: wrap; }
-        #logs { background: #111; padding: 10px; height: 120px; overflow-y: auto; border-radius: 4px; font-family: monospace; margin-top: 20px; width: 100%; max-width: 800px; font-size: 13px; text-align: left; }
-        .log-sys { color: #888; } .log-act { color: #48cae4; } .log-win { color: #06d6a0; font-weight: bold;}
+        #controls { background: #161b22; padding: 18px; border-radius: 12px; margin-top: 24px; display: flex; justify-content: center; align-items: center; gap: 10px; flex-wrap: wrap; border: 1px solid #30363d; }
+        #logs { background: #161b22; padding: 14px; height: 130px; overflow-y: auto; border-radius: 8px; font-family: 'Consolas', monospace; margin-top: 20px; width: 100%; max-width: 860px; font-size: 13px; text-align: left; border: 1px solid #30363d; }
+        .log-sys { color: #8b949e; } .log-act { color: #48cae4; } .log-win { color: #06d6a0; font-weight: bold;}
     </style>
 </head>
 <body>
 
-    <h1>P2P 5-Card Draw</h1>
+    <h1>CardShark-RL</h1>
+    <div class="subtitle">5-Card Draw Poker vs Reinforcement Learning & Heuristic Bots</div>
 
     <div id="lobby" class="panel">
         <h3>Your Info</h3>
         <input type="text" id="playerName" placeholder="Enter your name" value="Player">
-        <hr style="border-color: #444;">
+        
+        <h3>Bot Sparring Mode</h3>
+        <select id="botDifficulty">
+            <option value="champion">Champion (Model D Self-Attention)</option>
+            <option value="hard" selected>Hard / Superhuman (Model C 87-Dim)</option>
+            <option value="normal">Normal (Model B Multi-Player)</option>
+            <option value="casual">Casual (Rock / TAG Heuristic)</option>
+        </select>
+        
+        <hr style="border-color: #2d3748; margin: 18px 0;">
         <h3>Host Game</h3>
-        <button onclick="hostGame()">Create Room</button>
-        <hr style="border-color: #444;">
-        <h3>Join Game</h3>
-        <input type="text" id="joinId" placeholder="Paste Room ID here">
-        <button onclick="joinGame()">Join Room</button>
+        <button onclick="hostGame()" style="width: 100%; padding: 12px;">Create Table (Play vs Bots or Friends)</button>
+        
+        <hr style="border-color: #2d3748; margin: 18px 0;">
+        <h3>Join Existing Game</h3>
+        <input type="text" id="joinId" placeholder="Paste Table / Room ID here">
+        <button onclick="joinGame()" style="width: 100%;">Join Room</button>
     </div>
 
     <div id="game-board">
         <div id="winner-banner"></div>
 
         <div class="info-bar">
-            <div><strong>Room ID:</strong> <span id="boardRoomId" style="color:#ffb703; user-select:all; cursor:pointer;">...</span></div>
+            <div><strong>Table ID:</strong> <span id="boardRoomId" style="color:#ffb703; user-select:all; cursor:pointer;">...</span></div>
             <div><strong>Phase:</strong> <span id="phaseDisplay" style="color:#ffb703; text-transform:uppercase;">Waiting</span></div>
-            <div><strong>Total Pot:</strong> $<span id="potDisplay" style="color:#06d6a0; font-size: 1.2em;">0</span></div>
+            <div><strong>Total Pot:</strong> $<span id="potDisplay" style="color:#06d6a0; font-size: 1.25em;">0</span></div>
             <div><strong>Min Raise:</strong> $<span id="minRaiseDisplay">10</span></div>
         </div>
         
         <div id="opponents" class="opponents-grid"></div>
         
         <div style="margin-top: 20px;">
-            <h3>Your Hand - Chips: $<span id="myChipsDisplay" style="color:#06d6a0;">1000</span></h3>
+            <h3>Your Hand — Chips: $<span id="myChipsDisplay" style="color:#06d6a0;">1000</span></h3>
             <div id="myHand" class="hand"></div>
-            <div id="myEval" style="color: #ffb703; font-size: 0.9em; margin-top: 5px;"></div>
+            <div id="myEval" style="color: #ffb703; font-size: 0.95em; margin-top: 6px; font-weight: bold;"></div>
         </div>
 
         <div id="controls">
             <button id="btnStart" onclick="hostAction('start')" style="display:none; background:#d90429;">Deal Hand</button>
-            <button id="btnAddNPC" onclick="addNPC()" style="display:none; background:#ff9f1c;">Add NPC</button>
+            <button id="btnAddNPC" onclick="addNPC()" style="display:none; background:#ff9f1c;">Add Bot</button>
             <button id="btnFold" onclick="playerAction('fold')" style="display:none;">Fold</button>
             <button id="btnCheck" onclick="playerAction('call')" style="display:none;">Check</button>
             <button id="btnCall" onclick="playerAction('call')" style="display:none;">Call $<span id="callAmountBtn">0</span></button>
-            <input type="number" id="raiseAmount" style="width: 80px; margin-bottom: 0; display:none;" placeholder="$">
+            <input type="number" id="raiseAmount" style="width: 90px; margin-bottom: 0; display:none;" placeholder="$">
             <button id="btnRaise" onclick="playerAction('raise')" style="display:none;">Raise</button>
             <button id="btnSubmitDraw" onclick="playerAction('draw')" style="display:none; background:#ff9f1c;">Discard Selected</button>
         </div>
@@ -90,6 +102,7 @@
     <div id="logs"></div>
 
     <script>
+        const API_BASE = window.location.protocol.startsWith('http') ? '' : 'http://127.0.0.1:5000';
         let peer = null;
         let connection = null;
         let isHost = false;
@@ -106,7 +119,7 @@
             activePlayerIndex: 0,
             winMessage: "",
             winners: [],
-            players: [], // { id, name, chips, bet, invested, folded, allIn, actedThisRound, hand, handDrawn, finalEvalName }
+            players: [],
             deck: [],
             muck: []
         };
@@ -133,7 +146,7 @@
 
         function drawCard() {
             if (gameState.deck.length === 0) {
-                log("Deck exhausted. Reshuffling the muck...", "log-sys");
+                log("Deck exhausted. Reshuffling muck into deck stub...", "log-sys");
                 gameState.deck = gameState.muck.sort(() => Math.random() - 0.5);
                 gameState.muck = [];
             }
@@ -208,9 +221,8 @@
         function hostAction(action) {
             if (!isHost) return;
             if (action === 'start') {
-                if(gameState.players.length < 2) return alert("Need at least 2 players.");
+                if(gameState.players.length < 2) return alert("Need at least 2 players or bots at table.");
                 
-                // Rotate Dealer
                 gameState.dealerIndex = (gameState.dealerIndex + 1) % gameState.players.length;
                 gameState.deck = buildDeck();
                 gameState.muck = [];
@@ -224,7 +236,7 @@
                     p.handDrawn = false; p.hand = []; p.finalEvalName = ""; p.invested = 0;
                     p.drawCount = 0; p.raisesThisHand = 0; p.raisedPreDraw = false; p.raisedPostDraw = false;
                     
-                    if (p.chips <= 0) { p.folded = true; return; } // Bankrupt players sit out
+                    if (p.chips <= 0) { p.folded = true; return; }
                     
                     let actualAnte = Math.min(ANTE, p.chips);
                     p.bet = actualAnte; p.invested += actualAnte; p.chips -= actualAnte;
@@ -234,14 +246,13 @@
                     for(let i=0; i<5; i++) p.hand.push(drawCard());
                 });
                 
-                // Action starts left of dealer
                 gameState.activePlayerIndex = (gameState.dealerIndex + 1) % gameState.players.length;
                 while (gameState.players[gameState.activePlayerIndex].folded) {
                     gameState.activePlayerIndex = (gameState.activePlayerIndex + 1) % gameState.players.length;
                 }
 
                 gameState.phase = 'preDrawBet';
-                log(`New hand. Dealer is ${gameState.players[gameState.dealerIndex].name}. Ante is $${ANTE}.`, 'log-act');
+                log(`New hand dealt. Dealer button at ${gameState.players[gameState.dealerIndex].name}. Ante: $${ANTE}.`, 'log-act');
                 broadcast();
             }
         }
@@ -250,7 +261,7 @@
             let p = gameState.players.find(p => p.id === peerId);
             if (data.type === 'name') {
                 gameState.players.push({ id: peerId, name: data.name, chips: 1000, bet: 0, invested: 0, folded: false, allIn: false, actedThisRound: false, hand: [], handDrawn: false, finalEvalName: "" });
-                log(`${data.name} joined.`, 'log-sys');
+                log(`${data.name} joined table.`, 'log-sys');
                 broadcast();
             }
 
@@ -261,7 +272,7 @@
                 
                 if (data.action === 'fold') { 
                     p.folded = true; 
-                    gameState.muck.push(...p.hand); p.hand = []; // Muck cards
+                    gameState.muck.push(...p.hand); p.hand = [];
                     log(`${p.name} folds.`, 'log-act'); 
                 }
                 else if (data.action === 'call') {
@@ -282,9 +293,8 @@
                     
                     if (p.bet > gameState.currentBet) {
                         let trueRaise = p.bet - gameState.currentBet;
-                        if (trueRaise > gameState.minRaise) gameState.minRaise = trueRaise; // Update min raise
+                        if (trueRaise > gameState.minRaise) gameState.minRaise = trueRaise;
                         gameState.currentBet = p.bet;
-                        // Reset acted status for others
                         gameState.players.forEach(op => { if(op.id !== p.id && !op.folded && !op.allIn) op.actedThisRound = false; });
                         
                         p.raisesThisHand = (p.raisesThisHand || 0) + 1;
@@ -298,11 +308,11 @@
                 else if (data.action === 'draw') {
                     let discarded = [];
                     data.discardIndices.sort((a,b)=>b-a).forEach(idx => { discarded.push(p.hand.splice(idx, 1)[0]); });
-                    gameState.muck.push(...discarded); // Muck discarded cards
+                    gameState.muck.push(...discarded);
                     while(p.hand.length < 5) p.hand.push(drawCard());
                     p.handDrawn = true;
                     p.drawCount = data.discardIndices.length;
-                    log(`${p.name} drew ${data.discardIndices.length} cards.`, 'log-act');
+                    log(`${p.name} discarded ${data.discardIndices.length} cards.`, 'log-act');
                 }
                 advanceTurn();
             }
@@ -312,28 +322,24 @@
             let activePlayers = gameState.players.filter(p => !p.folded);
             let playersWithChips = activePlayers.filter(p => !p.allIn);
             
-            if (activePlayers.length === 1) return processShowdown(); // Everyone else folded
+            if (activePlayers.length === 1) return processShowdown();
 
             if (gameState.phase === 'preDrawBet' || gameState.phase === 'postDrawBet') {
-                // Phase ends if everyone active has acted, AND they either matched the bet or are all-in
                 let allActed = activePlayers.every(p => p.actedThisRound || p.allIn);
                 let allMatched = activePlayers.every(p => p.bet === gameState.currentBet || p.allIn);
                 
                 if (allActed && allMatched) {
                     gameState.players.forEach(p => { p.bet = 0; p.actedThisRound = false; });
                     gameState.currentBet = 0;
-                    gameState.minRaise = ANTE; // Reset min raise for post-draw
+                    gameState.minRaise = ANTE;
                     
-                    // Set active player to left of dealer
                     gameState.activePlayerIndex = (gameState.dealerIndex + 1) % gameState.players.length;
                     while (gameState.players[gameState.activePlayerIndex].folded || gameState.players[gameState.activePlayerIndex].allIn) {
                         gameState.activePlayerIndex = (gameState.activePlayerIndex + 1) % gameState.players.length;
-                        // If we looped entirely, no one can act (all in)
                         if (gameState.activePlayerIndex === (gameState.dealerIndex + 1) % gameState.players.length) break; 
                     }
                     
                     if (playersWithChips.length <= 1 && gameState.phase === 'preDrawBet') {
-                        // Fast forward if everyone but 1 is all in
                         gameState.phase = 'draw';
                     } else if (gameState.phase === 'preDrawBet') {
                         gameState.phase = 'draw';
@@ -346,7 +352,6 @@
 
             if (gameState.phase === 'draw') {
                 if (activePlayers.every(p => p.handDrawn || p.allIn)) {
-                    // Skip betting if 1 or 0 players have chips
                     if (playersWithChips.length <= 1) return processShowdown();
                     
                     gameState.phase = 'postDrawBet';
@@ -358,18 +363,17 @@
                 }
             }
 
-            // Find next player who can act
             let safety = 0;
             do { 
                 gameState.activePlayerIndex = (gameState.activePlayerIndex + 1) % gameState.players.length;
                 safety++;
             } while ((gameState.players[gameState.activePlayerIndex].folded || gameState.players[gameState.activePlayerIndex].allIn) && safety < 10);
             
-            if(safety >= 10) return processShowdown(); // Catch infinite loops if everyone is all in
+            if(safety >= 10) return processShowdown();
             
             let activePlayer = gameState.players[gameState.activePlayerIndex];
             if (activePlayer && activePlayer.isNPC && isHost) {
-                setTimeout(() => doNPCAction(activePlayer), 500); // add small delay for realism
+                setTimeout(() => doNPCAction(activePlayer), 500);
             }
 
             broadcast();
@@ -380,20 +384,17 @@
             let winMsgs = [];
             
             if (activePlayers.length === 1) {
-                // Won by folds
                 let w = activePlayers[0];
                 w.chips += gameState.pot;
                 winMsgs.push(`${w.name} wins $${gameState.pot} (Everyone Folded)`);
                 gameState.winners = [w.id];
             } else {
-                // Evaluate Hands
                 let evaluated = activePlayers.map(p => {
                     let ev = evaluateHand(p.hand);
                     p.finalEvalName = ev.name;
                     return { id: p.id, name: p.name, eval: ev, invested: p.invested };
                 });
 
-                // Proportional Side-Pot Distribution Algorithm
                 let remainingPot = gameState.pot;
                 gameState.winners = [];
 
@@ -406,7 +407,6 @@
                         return 0;
                     });
 
-                    // Find all tied players for the current best hand
                     let currentWinners = [evaluated[0]];
                     for (let i = 1; i < evaluated.length; i++) {
                         let isTie = true;
@@ -419,15 +419,12 @@
                         if (isTie) currentWinners.push(evaluated[i]); else break;
                     }
 
-                    // Find the smallest investment among the tied winners
                     let minInvested = Math.min(...currentWinners.map(w => w.invested));
-                    
-                    // Calculate the side pot size for this investment tier
                     let sidePot = 0;
                     gameState.players.forEach(p => {
                         let contribution = Math.min(p.invested, minInvested);
                         sidePot += contribution;
-                        p.invested -= contribution; // Remove from pool
+                        p.invested -= contribution;
                     });
 
                     let splitAmt = Math.floor(sidePot / currentWinners.length);
@@ -436,13 +433,11 @@
                         p.chips += splitAmt;
                         if (!gameState.winners.includes(p.id)) {
                             gameState.winners.push(p.id);
-                            winMsgs.push(`${p.name} wins $${splitAmt} with ${p.finalEvalName}`);
+                            winMsgs.push(`${p.name} wins $${splitAmt} (${p.finalEvalName})`);
                         }
                     });
 
                     remainingPot -= sidePot;
-
-                    // Remove winners who have maxed out their allowed payout (their invested went to 0)
                     evaluated = evaluated.filter(e => {
                         let p = gameState.players.find(p => p.id === e.id);
                         return p.invested > 0;
@@ -475,7 +470,6 @@
                 let amt = parseInt(document.getElementById('raiseAmount').value);
                 let toCall = gameState.currentBet - me.bet;
                 
-                // If they have less than the minRaise, they can only go all-in
                 if (amt < gameState.minRaise && amt !== (me.chips - toCall)) {
                     return alert(`Minimum raise is $${gameState.minRaise}, or All-In.`);
                 }
@@ -492,11 +486,10 @@
             if(gameState.phase !== 'draw') return;
             const idx = selectedCards.indexOf(index);
             if (idx > -1) selectedCards.splice(idx, 1);
-            else if (selectedCards.length < 5) selectedCards.push(index); // Up to 5
+            else if (selectedCards.length < 5) selectedCards.push(index);
             updateUI();
         }
 
-        // --- UI Rendering ---
         function showGameArea() {
             document.getElementById('lobby').style.display = 'none';
             document.getElementById('game-board').style.display = 'block';
@@ -524,7 +517,7 @@
                 
                 let myEvalDiv = document.getElementById('myEval');
                 if (gameState.phase === 'gameover' && !me.folded) myEvalDiv.innerText = me.finalEvalName;
-                else if (myHand.length === 5 && !me.folded) myEvalDiv.innerText = `Current Hand: ${evaluateHand(myHand).name}`;
+                else if (myHand.length === 5 && !me.folded) myEvalDiv.innerText = `Current: ${evaluateHand(myHand).name}`;
                 else myEvalDiv.innerText = "";
             }
 
@@ -555,7 +548,7 @@
                     }
                 } else if (gameState.phase === 'draw' && !me.handDrawn) {
                     document.getElementById('btnSubmitDraw').style.display = 'inline-block';
-                    document.getElementById('btnSubmitDraw').innerText = selectedCards.length === 0 ? "Stand Pat (Keep All)" : `Discard ${selectedCards.length}`;
+                    document.getElementById('btnSubmitDraw').innerText = selectedCards.length === 0 ? "Stand Pat" : `Discard ${selectedCards.length}`;
                 }
             }
 
@@ -569,7 +562,7 @@
                     cardEl.onclick = () => toggleCard(index);
                     handDiv.appendChild(cardEl);
                 });
-            } else if (me && me.folded) handDiv.innerHTML = '<div style="color:gray;">Folded</div>';
+            } else if (me && me.folded) handDiv.innerHTML = '<div style="color:gray; padding-top:30px;">Folded</div>';
 
             const oppDiv = document.getElementById('opponents');
             oppDiv.innerHTML = '';
@@ -601,15 +594,27 @@
                 el.innerHTML = html; oppDiv.appendChild(el);
             });
         }
+
         function addNPC() {
             if (!isHost) return;
+            const diffSelect = document.getElementById('botDifficulty');
+            const diff = diffSelect ? diffSelect.value : 'hard';
+            const diffLabels = {
+                'champion': 'Champion (Model D)',
+                'hard': 'Hard (Model C)',
+                'normal': 'Normal (Model B)',
+                'casual': 'Casual (TAG Bot)'
+            };
+            const label = diffLabels[diff] || 'Bot';
+            
             let npcId = 'npc_' + Math.random().toString(36).substr(2, 9);
             gameState.players.push({ 
-                id: npcId, name: 'CardShark Model B', isNPC: true, 
+                id: npcId, name: `${label} #${gameState.players.length}`, isNPC: true, 
+                difficulty: diff,
                 chips: 1000, bet: 0, invested: 0, folded: false, allIn: false, 
                 actedThisRound: false, hand: [], handDrawn: false, finalEvalName: "" 
             });
-            log(`CardShark Model B joined as NPC.`, 'log-sys');
+            log(`${label} seated at the table.`, 'log-sys');
             updateUI();
             broadcast();
         }
@@ -628,6 +633,7 @@
             }
 
             let payload = {
+                difficulty: npc.difficulty || 'hard',
                 hand: npc.hand.map(c => ({ rank: c.rank, suit: c.suit, color: c.color })),
                 pot: gameState.pot,
                 bet_to_call: gameState.currentBet - npc.bet,
@@ -641,7 +647,7 @@
             };
 
             try {
-                let res = await fetch('http://127.0.0.1:5000/npc_action', {
+                let res = await fetch(`${API_BASE}/npc_action`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -656,7 +662,7 @@
                 });
             } catch (err) {
                 console.error("NPC Action Error:", err);
-                log(`NPC encountered an error. Folding.`, 'log-sys');
+                log(`NPC decision timeout/fallback. Folding.`, 'log-sys');
                 handleHostData(npc.id, { type: 'action', action: 'fold' });
             }
         }
@@ -665,10 +671,8 @@
             let humans = gameState.players.filter(p => !p.isNPC);
             if (humans.length === 0) return;
             
-            // Average or first human approximation for implicit stats against multi-player
             let h = humans[0];
-            
-            fetch('http://127.0.0.1:5000/end_hand', {
+            fetch(`${API_BASE}/end_hand`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

@@ -16,10 +16,16 @@ import numpy as np
 from abc import ABC, abstractmethod
 from typing import List, Dict, Optional, Any
 
-from card_utils import (
-    rank_of, suit_of, hand_category, get_pairs_info,
-    has_flush_draw, has_straight_draw, evaluate_hand
-)
+try:
+    from game.card_utils import (
+        rank_of, suit_of, hand_category, get_pairs_info,
+        has_flush_draw, has_straight_draw, evaluate_hand
+    )
+except ImportError:
+    from card_utils import (
+        rank_of, suit_of, hand_category, get_pairs_info,
+        has_flush_draw, has_straight_draw, evaluate_hand
+    )
 
 # Action indices
 A_FOLD = 0
@@ -295,7 +301,75 @@ class LAG(MultiPlayerOpponent):
         return standard_math_discard(hand)
 
 
-ARCHETYPE_CLASSES = [CallingStation, Maniac, Rock, TAG, LAG]
+# ---------------------------------------------------------------------------
+# 6. Adversarial Exploiter (Probes and attacks table leaks)
+# ---------------------------------------------------------------------------
+
+class AdversarialExploiter(MultiPlayerOpponent):
+    """
+    Dynamic exploitative sparring agent designed for Model D co-evolution.
+    Probes for timid checks and passive calling tendencies:
+    - Pre-draw: Puts maximum pressure on limpers and probes position.
+    - Post-draw: Fires pot/all-in bets when opponents check or show weak draws.
+    - Defends against over-bluffing by inducing bluffs with strong made hands (slow-playing trips+).
+    """
+
+    def __init__(self, rng=None):
+        super().__init__(opponent_id=5, name="Exploiter", rng=rng)
+
+    def bet_action(self, hand, pot, bet_to_call, phase, stack, legal_actions) -> int:
+        cat = hand_category(hand)
+
+        if bet_to_call == 0:
+            if cat >= 3:
+                # Slow play monster hands 40% to induce bluffs, bet 60%
+                if self.rng.random() < 0.40:
+                    return A_CALL
+                if A_POT in legal_actions and self.rng.random() < 0.70:
+                    return A_POT
+                return A_HALF_POT if A_HALF_POT in legal_actions else A_CALL
+            elif cat >= 1:
+                if self.rng.random() < 0.65 and A_HALF_POT in legal_actions:
+                    return A_HALF_POT
+                return A_CALL
+            else:
+                # Probe bet bluff 35% of the time to punish passive checks
+                if self.rng.random() < 0.35:
+                    if A_POT in legal_actions:
+                        return A_POT
+                    if A_HALF_POT in legal_actions:
+                        return A_HALF_POT
+                return A_CALL
+
+        # Facing a bet
+        if cat >= 3:
+            if A_ALL_IN in legal_actions and self.rng.random() < 0.40:
+                return A_ALL_IN
+            if A_POT in legal_actions:
+                return A_POT
+            if A_MIN_RAISE in legal_actions:
+                return A_MIN_RAISE
+            return A_CALL
+
+        if cat in (1, 2):
+            if bet_to_call > stack * 0.50 and cat == 1 and A_FOLD in legal_actions:
+                return A_FOLD
+            if self.rng.random() < 0.25 and A_MIN_RAISE in legal_actions:
+                return A_MIN_RAISE
+            return A_CALL if A_CALL in legal_actions else legal_actions[0]
+
+        # Weak / High card facing bet
+        if self.rng.random() < 0.15 and A_POT in legal_actions:
+            return A_POT
+        if A_FOLD in legal_actions:
+            return A_FOLD
+        return legal_actions[0]
+
+    def draw_action(self, hand: List[int]) -> List[int]:
+        return standard_math_discard(hand)
+
+
+ARCHETYPE_CLASSES = [CallingStation, Maniac, Rock, TAG, LAG, AdversarialExploiter]
 NUM_ARCHETYPES = len(ARCHETYPE_CLASSES)
 
 
@@ -308,147 +382,18 @@ def make_random_archetype(rng: np.random.Generator | None = None) -> MultiPlayer
     r = rng or np.random.default_rng()
     opp_id = int(r.integers(0, NUM_ARCHETYPES))
     return make_opponent_by_id(opp_id, rng=r)
-
-
 # ---------------------------------------------------------------------------
 # Multi-Agent League Sparring (Fictitious Play)
+# Moved to rl/league.py to keep game/ pure poker simulation logic.
 # ---------------------------------------------------------------------------
 
-_MODEL_CACHE: Dict[str, Any] = {}
-
-def get_cached_model(model_path: str):
-    """Loads and caches neural network checkpoints to prevent duplicate disk reads."""
-    if model_path not in _MODEL_CACHE:
-        if not os.path.exists(model_path):
-            raise FileNotFoundError(f"League checkpoint not found: {model_path}")
-        from sb3_contrib import MaskablePPO
-        _MODEL_CACHE[model_path] = MaskablePPO.load(model_path)
-    return _MODEL_CACHE[model_path]
-
-
-class LeagueOpponent(MultiPlayerOpponent):
-    """Neural network opponent loaded from a frozen checkpoint (Model B or Model C snapshot)."""
-
-    def __init__(
-        self,
-        model_path: str,
-        opponent_id: int = 100,
-        name: Optional[str] = None,
-        rng: Optional[np.random.Generator] = None,
-        deterministic: bool = False,
-    ):
-        base_name = name or f"League_{os.path.basename(model_path).replace('.zip', '')}"
-        super().__init__(opponent_id=opponent_id, name=base_name, rng=rng)
-        self.model_path = model_path
-        self.deterministic = deterministic
-        self.model = get_cached_model(model_path)
-        self.is_superhuman = (self.model.observation_space.shape[0] == 87)
-        from opponent_tracker import TableOpponentTracker
-        self.tracker = TableOpponentTracker(num_seats=5)
-        self._fallback_bot = TAG(rng=self.rng)
-
-    def act_with_env(self, env, seat_idx: int, legal_actions: List[int]) -> int:
-        from multi_gym_wrapper import build_observation_vector
+def __getattr__(name: str):
+    if name in ("LeagueOpponent", "LeaguePool", "get_cached_model"):
         try:
-            obs = build_observation_vector(
-                env=env,
-                tracker=self.tracker,
-                seat_idx=seat_idx,
-                superhuman_obs=self.is_superhuman,
-            )
-            mask = env.get_action_mask(seat_idx)
-            action_id, _ = self.model.predict(obs, action_masks=mask, deterministic=self.deterministic)
-            action_id = int(action_id)
-            if action_id in legal_actions:
-                return action_id
-        except Exception:
-            pass
-        return self._fallback_bot.bet_action(
-            hand=env.seats[seat_idx].hand,
-            pot=env.pot,
-            bet_to_call=env.seats[seat_idx].bet_to_call,
-            phase=env.phase,
-            stack=env.seats[seat_idx].chips,
-            legal_actions=legal_actions,
-        )
+            import rl.league as _league
+            return getattr(_league, name)
+        except ImportError:
+            raise AttributeError(f"'{name}' has been moved to 'rl.league' and 'rl' is not available.")
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
-    def draw_with_env(self, env, seat_idx: int) -> int:
-        legal = env.get_legal_actions(seat_idx)
-        return self.act_with_env(env, seat_idx, legal)
-
-    def bet_action(
-        self,
-        hand: List[int],
-        pot: int,
-        bet_to_call: int,
-        phase: str,
-        stack: int,
-        legal_actions: List[int],
-    ) -> int:
-        return self._fallback_bot.bet_action(
-            hand=hand,
-            pot=pot,
-            bet_to_call=bet_to_call,
-            phase=phase,
-            stack=stack,
-            legal_actions=legal_actions,
-        )
-
-    def draw_action(self, hand: List[int]) -> List[int]:
-        return self._fallback_bot.draw_action(hand)
-
-
-class LeaguePool:
-    """Manages the pool of sparring agents (frozen Model B, historical Model C checkpoints, and heuristics)."""
-
-    def __init__(
-        self,
-        base_model_path: str = "models/model_b_multiplayer.zip",
-        league_dir: str = "models/league",
-        neural_opponent_prob: float = 0.50,
-    ):
-        self.base_model_path = base_model_path
-        self.league_dir = league_dir
-        self.neural_opponent_prob = neural_opponent_prob
-        self.checkpoints: List[str] = []
-        os.makedirs(self.league_dir, exist_ok=True)
-        self.refresh_checkpoints()
-
-    def refresh_checkpoints(self):
-        """Scans the filesystem for valid model checkpoints."""
-        self.checkpoints = []
-        if os.path.exists(self.base_model_path):
-            self.checkpoints.append(self.base_model_path)
-        if os.path.exists(self.league_dir):
-            for fname in sorted(os.listdir(self.league_dir)):
-                if fname.endswith(".zip"):
-                    full_p = os.path.join(self.league_dir, fname)
-                    if full_p not in self.checkpoints:
-                        self.checkpoints.append(full_p)
-
-    def add_snapshot(self, model_path: str):
-        """Adds a newly created training snapshot to the sparring pool."""
-        if os.path.exists(model_path) and model_path not in self.checkpoints:
-            self.checkpoints.append(model_path)
-
-    def sample_opponent(
-        self,
-        seat_idx: int = 0,
-        rng: Optional[np.random.Generator] = None,
-    ) -> MultiPlayerOpponent:
-        """Samples either a neural LeagueOpponent or a heuristic archetype."""
-        r = rng or np.random.default_rng()
-        if self.checkpoints and r.random() < self.neural_opponent_prob:
-            chosen_path = str(r.choice(self.checkpoints))
-            try:
-                return LeagueOpponent(
-                    model_path=chosen_path,
-                    opponent_id=100 + seat_idx,
-                    rng=r,
-                    deterministic=False, # Stochastic sparring for policy exploration
-                )
-            except Exception:
-                return make_random_archetype(rng=r)
-        else:
-            return make_random_archetype(rng=r)
 

@@ -1,0 +1,26 @@
+{
+  "embed_dim": 64,
+  "num_heads": 4,
+  "pooling": "attention",
+  "card_features_dim": 64,
+  "net_arch": [
+    256,
+    256,
+    256
+  ],
+  "learning_rate": 0.00029385948852467643,
+  "min_lr": 2.789975930004357e-05,
+  "n_restart_cycles": 4,
+  "n_steps": 1536,
+  "batch_size": 128,
+  "n_epochs": 8,
+  "gamma": 0.9948668260686856,
+  "gae_lambda": 0.9141097111429285,
+  "clip_range": 0.23549139425474327,
+  "ent_coef": 0.007768647057178063,
+  "vf_coef": 0.5849510429051119,
+  "max_grad_norm": 0.5095739653308942,
+  "fold_penalty": 0.2174897340492915,
+  "blind_escalation": 14,
+  "fitness_score": -246.91
+}

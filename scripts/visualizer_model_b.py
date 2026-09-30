@@ -11,8 +11,13 @@ Generates:
 
 from __future__ import annotations
 import os
+import sys
 import argparse
 import numpy as np
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 import matplotlib
 matplotlib.use("Agg")  # Non-interactive backend
 import matplotlib.pyplot as plt
@@ -197,7 +202,7 @@ if __name__ == "__main__":
 
     results = None
     if os.path.exists(args.model_path):
-        from evaluate_multi import evaluate_tournament_sessions
+        from scripts.evaluate_model_b import evaluate_tournament_sessions
         print(f"Evaluating {args.model_path} across {args.eval_sessions} sessions to plot empirical data...")
         results = evaluate_tournament_sessions(
             model_path=args.model_path,
