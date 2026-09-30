@@ -23,26 +23,37 @@ from multi_draw_poker_env import (
 from opponent_tracker import TableOpponentTracker
 
 OBS_DIM = 63
+SUPERHUMAN_OBS_DIM = 87
 
 
 class CardSharkNPC:
-    """Drop-in multi-player NPC player powered by trained Model B."""
+    """Drop-in multi-player NPC player supporting Normal (Model B) and Hard/Superhuman (Model C) modes."""
 
     def __init__(
         self,
-        model_path: str = "models/model_b_multiplayer.zip",
+        model_path: Optional[str] = None,
+        difficulty: str = "normal",
         num_seats: int = 5,
         npc_seat: int = 0,
     ):
         self.num_seats = num_seats
         self.npc_seat = npc_seat
+        self.difficulty = difficulty.lower()
         self.tracker = TableOpponentTracker(num_seats=num_seats)
+
+        if model_path is None:
+            if self.difficulty in ("hard", "superhuman"):
+                model_path = "models/model_c_superhuman.zip"
+            else:
+                model_path = "models/model_b_multiplayer.zip"
 
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Model checkpoint not found at: {model_path}")
 
-        print(f"[CardSharkNPC] Loading trained policy from: {model_path}")
+        print(f"[CardSharkNPC] Loading trained policy [{self.difficulty.upper()}] from: {model_path}")
         self.model = MaskablePPO.load(model_path)
+        self.obs_dim = self.model.observation_space.shape[0]
+        self.is_superhuman = (self.obs_dim == SUPERHUMAN_OBS_DIM)
 
     def get_action(
         self,
@@ -59,6 +70,10 @@ class CardSharkNPC:
         seat_in_hand: List[bool],
         seat_draw_counts: List[int],
         big_blind: int = 2,
+        seat_pre_draw_actions: Optional[List[int]] = None,
+        seat_post_draw_actions: Optional[List[int]] = None,
+        seat_pre_draw_bets: Optional[List[int]] = None,
+        seat_post_draw_bets: Optional[List[int]] = None,
     ) -> dict:
         """Computes the optimal action given current table state.
 
@@ -84,6 +99,10 @@ class CardSharkNPC:
             seat_alive=seat_alive,
             seat_in_hand=seat_in_hand,
             seat_draw_counts=seat_draw_counts,
+            seat_pre_draw_actions=seat_pre_draw_actions,
+            seat_post_draw_actions=seat_post_draw_actions,
+            seat_pre_draw_bets=seat_pre_draw_bets,
+            seat_post_draw_bets=seat_post_draw_bets,
         )
 
         # 2. Build legal action mask
@@ -201,6 +220,10 @@ class CardSharkNPC:
         seat_alive: List[bool],
         seat_in_hand: List[bool],
         seat_draw_counts: List[int],
+        seat_pre_draw_actions: Optional[List[int]] = None,
+        seat_post_draw_actions: Optional[List[int]] = None,
+        seat_pre_draw_bets: Optional[List[int]] = None,
+        seat_post_draw_bets: Optional[List[int]] = None,
     ) -> np.ndarray:
         total_chips = max(1.0, float(total_table_chips))
         pot_f = float(pot)
@@ -266,4 +289,59 @@ class CardSharkNPC:
             opp_vector
         )
 
+        if not self.is_superhuman:
+            return np.array(obs, dtype=np.float32)
+
+        # 7. Model C Superhuman Sequence & Dynamic Recency Memory (24: 4 slots x 6 features)
+        act_map = {
+            -1: 0.0,
+            A_FOLD: -1.0,
+            A_CALL: 0.2,
+            A_MIN_RAISE: 0.5,
+            A_HALF_POT: 0.7,
+            A_POT: 0.9,
+            A_ALL_IN: 1.0,
+        }
+
+        superhuman_features: List[float] = []
+        for offset in range(1, self.num_seats):
+            s = (self.npc_seat + offset) % self.num_seats
+            alive = s < len(seat_alive) and seat_alive[s]
+
+            if alive:
+                pre_act_raw = seat_pre_draw_actions[s] if seat_pre_draw_actions and s < len(seat_pre_draw_actions) else -1
+                post_act_raw = seat_post_draw_actions[s] if seat_post_draw_actions and s < len(seat_post_draw_actions) else -1
+                pre_bet = seat_pre_draw_bets[s] if seat_pre_draw_bets and s < len(seat_pre_draw_bets) else 0
+                post_bet = seat_post_draw_bets[s] if seat_post_draw_bets and s < len(seat_post_draw_bets) else 0
+                draw_count = seat_draw_counts[s] if seat_draw_counts and s < len(seat_draw_counts) else -1
+                is_folded = s < len(seat_in_hand) and not seat_in_hand[s]
+
+                pre_act = act_map.get(pre_act_raw, 0.0)
+                pre_sizing = float(np.clip(pre_bet / total_chips, 0.0, 1.0))
+                post_act = act_map.get(post_act_raw, 0.0)
+                post_sizing = float(np.clip(post_bet / total_chips, 0.0, 1.0))
+
+                line_code = 0.0
+                if is_folded:
+                    line_code = -1.0
+                elif post_act_raw in (A_MIN_RAISE, A_HALF_POT, A_POT, A_ALL_IN):
+                    if draw_count == 0:
+                        line_code = 0.8
+                    elif pre_act_raw in (-1, A_CALL) and draw_count in (1, 2):
+                        line_code = 1.0
+                    elif pre_act_raw in (A_MIN_RAISE, A_HALF_POT, A_POT, A_ALL_IN) and draw_count >= 2:
+                        line_code = -0.5
+                    else:
+                        line_code = 0.6
+                elif post_act_raw == A_CALL:
+                    line_code = 0.1
+
+                tilt_delta = self.tracker.get_seat_recency_delta(s)
+                slot_seq = [pre_act, pre_sizing, post_act, post_sizing, line_code, tilt_delta]
+            else:
+                slot_seq = [0.0] * 6
+
+            superhuman_features.extend(slot_seq)
+
+        obs = obs + superhuman_features
         return np.array(obs, dtype=np.float32)
