@@ -30,8 +30,8 @@ from game.multi_opponents import make_random_archetype, make_opponent_by_id
 
 
 def evaluate_superhuman_sessions(
-    model_c_path: str = "models/model_c_superhuman.zip",
-    model_b_path: str = "models/model_b_multiplayer.zip",
+    model_c_path: str = "models/model_c.zip",
+    model_b_path: str = "models/model_b.zip",
     num_sessions: int = 30,
     starting_chips: int = 200,
     small_blind: int = 1,
@@ -247,8 +247,8 @@ def run_comparative_table(model_c_path: str, model_b_path: str, sessions: int = 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate Model C Superhuman Poker Agent")
-    parser.add_argument("--model-c", type=str, default="models/model_c_superhuman.zip")
-    parser.add_argument("--model-b", type=str, default="models/model_b_multiplayer.zip")
+    parser.add_argument("--model-c", type=str, default="models/model_c.zip")
+    parser.add_argument("--model-b", type=str, default="models/model_b.zip")
     parser.add_argument("--sessions", type=int, default=30)
     parser.add_argument("--chips", type=int, default=200)
     parser.add_argument("--compare", action="store_true", help="Run head-to-head comparison table")

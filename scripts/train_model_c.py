@@ -187,7 +187,7 @@ def train(
     learning_rate: float = 3e-4,
     save_dir: str = "models",
     league_dir: str = "models/league",
-    model_name: str = "model_c_superhuman.zip",
+    model_name: str = "model_c.zip",
     smoke_test: bool = False,
     seed: int = 42,
     freezeout: bool = True,

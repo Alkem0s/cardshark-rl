@@ -51,12 +51,24 @@
         <h3>Your Info</h3>
         <input type="text" id="playerName" placeholder="Enter your name" value="Player">
         
-        <h3>Bot Sparring Mode</h3>
+        <h3>Default Bot Sparring Mode</h3>
         <select id="botDifficulty">
-            <option value="champion">Champion (Model D Self-Attention)</option>
-            <option value="hard" selected>Hard / Superhuman (Model C 87-Dim)</option>
-            <option value="normal">Normal (Model B Multi-Player)</option>
-            <option value="casual">Casual (Rock / TAG Heuristic)</option>
+            <optgroup label="🏆 Main Difficulty Tiers">
+                <option value="beginner">1. Beginner (Calling Station — Passive Sparring)</option>
+                <option value="casual">2. Casual (TAG — Textbook Fundamentals)</option>
+                <option value="advanced" selected>3. Advanced (Model B — Bayesian Multiway)</option>
+                <option value="master">4. Master (Model C — Superhuman Sequence Memory)</option>
+                <option value="grandmaster">5. Grandmaster (Model D — Card Attention AI)</option>
+                <option value="wildcard">🎲 Wildcard (Chameleon — Random Persona Cycler)</option>
+            </optgroup>
+            <optgroup label="🎯 Archetype Practice & Persona Modes">
+                <option value="maniac">Practice vs Maniac (Hyper-Aggressive)</option>
+                <option value="rock">Practice vs Rock (Nit Blind-Stealing)</option>
+                <option value="calling_station">Practice vs Calling Station (Value Maximizer)</option>
+                <option value="exploiter">Practice vs Exploiter (Trap & Counter-Play)</option>
+                <option value="lag">Practice vs LAG (Loose Pressure)</option>
+                <option value="model_a">Heads-Up Duel (Model A 1v1 Classic)</option>
+            </optgroup>
         </select>
         
         <hr style="border-color: #2d3748; margin: 18px 0;">
@@ -89,7 +101,27 @@
 
         <div id="controls">
             <button id="btnStart" onclick="hostAction('start')" style="display:none; background:#d90429;">Deal Hand</button>
-            <button id="btnAddNPC" onclick="addNPC()" style="display:none; background:#ff9f1c;">Add Bot</button>
+            <div id="addBotContainer" style="display:none; align-items:center; gap:6px;">
+                <select id="tableBotSelect" style="width: auto; margin-bottom: 0; padding: 8px 12px; font-size: 13px; border-radius: 6px;">
+                    <optgroup label="Main Difficulty Tiers">
+                        <option value="beginner">1. Beginner (Station)</option>
+                        <option value="casual">2. Casual (TAG)</option>
+                        <option value="advanced">3. Advanced (Model B)</option>
+                        <option value="master">4. Master (Model C)</option>
+                        <option value="grandmaster" selected>5. Grandmaster (Model D)</option>
+                        <option value="wildcard">🎲 Wildcard (Chameleon)</option>
+                    </optgroup>
+                    <optgroup label="Archetype Practice & Personas">
+                        <option value="maniac">Maniac (Hyper-Aggressive)</option>
+                        <option value="rock">Rock (Ultra-Tight)</option>
+                        <option value="calling_station">Calling Station (Passive)</option>
+                        <option value="exploiter">Adversarial Exploiter</option>
+                        <option value="lag">LAG (Loose-Aggressive)</option>
+                        <option value="model_a">Heads-Up (Model A)</option>
+                    </optgroup>
+                </select>
+                <button id="btnAddNPC" onclick="addNPC()" style="background:#ff9f1c;">Add Bot</button>
+            </div>
             <button id="btnFold" onclick="playerAction('fold')" style="display:none;">Fold</button>
             <button id="btnCheck" onclick="playerAction('call')" style="display:none;">Check</button>
             <button id="btnCall" onclick="playerAction('call')" style="display:none;">Call $<span id="callAmountBtn">0</span></button>
@@ -496,8 +528,9 @@
         }
 
         function hideAllControls() {
-            ['btnStart', 'btnFold', 'btnCheck', 'btnCall', 'raiseAmount', 'btnRaise', 'btnSubmitDraw'].forEach(id => {
-                document.getElementById(id).style.display = 'none';
+            ['btnStart', 'addBotContainer', 'btnFold', 'btnCheck', 'btnCall', 'raiseAmount', 'btnRaise', 'btnSubmitDraw'].forEach(id => {
+                let el = document.getElementById(id);
+                if (el) el.style.display = 'none';
             });
         }
 
@@ -525,7 +558,10 @@
             
             if (isHost && (gameState.phase === 'waiting' || gameState.phase === 'gameover')) {
                 document.getElementById('btnStart').style.display = 'inline-block';
-                document.getElementById('btnAddNPC').style.display = 'inline-block';
+                if (gameState.players.length < 5) {
+                    let container = document.getElementById('addBotContainer');
+                    if (container) container.style.display = 'inline-flex';
+                }
             }
 
             let isMyTurn = (gameState.players[gameState.activePlayerIndex]?.id === myId);
@@ -597,13 +633,35 @@
 
         function addNPC() {
             if (!isHost) return;
-            const diffSelect = document.getElementById('botDifficulty');
-            const diff = diffSelect ? diffSelect.value : 'hard';
+            if (gameState.players.length >= 5) {
+                log('Table is full! Maximum 5 players allowed.', 'log-err');
+                return;
+            }
+            const tableSelect = document.getElementById('tableBotSelect');
+            const lobbySelect = document.getElementById('botDifficulty');
+            const diff = (tableSelect && tableSelect.value) ? tableSelect.value : (lobbySelect ? lobbySelect.value : 'hard');
+            
             const diffLabels = {
-                'champion': 'Champion (Model D)',
-                'hard': 'Hard (Model C)',
-                'normal': 'Normal (Model B)',
-                'casual': 'Casual (TAG Bot)'
+                // Main Tiers
+                'grandmaster': 'Grandmaster (Model D)',
+                'champion': 'Grandmaster (Model D)',
+                'master': 'Master (Model C)',
+                'hard': 'Master (Model C)',
+                'advanced': 'Advanced (Model B)',
+                'normal': 'Advanced (Model B)',
+                'casual': 'Casual (TAG Bot)',
+                'beginner': 'Beginner (Station)',
+                'wildcard': 'Wildcard (Chameleon)',
+                'chameleon': 'Wildcard (Chameleon)',
+                'random_heuristic': 'Wildcard (Chameleon)',
+                // Practice Personas
+                'maniac': 'Maniac Bot',
+                'rock': 'Rock Bot',
+                'calling_station': 'Station Bot',
+                'exploiter': 'Exploiter Bot',
+                'lag': 'LAG Bot',
+                'tag': 'TAG Bot',
+                'model_a': 'Heads-Up (Model A)'
             };
             const label = diffLabels[diff] || 'Bot';
             
@@ -632,6 +690,8 @@
                 opp_raised_pre = opps.some(p => p.raisedPreDraw);
             }
 
+            let myIdx = gameState.players.findIndex(p => p.id === npc.id);
+
             let payload = {
                 difficulty: npc.difficulty || 'hard',
                 hand: npc.hand.map(c => ({ rank: c.rank, suit: c.suit, color: c.color })),
@@ -640,6 +700,17 @@
                 phase: gameState.phase === 'preDrawBet' ? 'pre_draw' : (gameState.phase === 'postDrawBet' ? 'post_draw' : 'draw'),
                 opp_draw: opp_draw,
                 position: (gameState.activePlayerIndex === (gameState.dealerIndex + 1) % gameState.players.length) ? 1.0 : 0.0,
+                npc_chips: npc.chips || 1000,
+                npc_seat: myIdx >= 0 ? myIdx : 0,
+                button_seat: gameState.dealerIndex || 0,
+                players: gameState.players.map(p => ({
+                    id: p.id,
+                    chips: p.chips || 0,
+                    invested: p.invested || 0,
+                    folded: !!p.folded,
+                    is_alive: (p.chips > 0 || !p.folded),
+                    draw_count: p.drawCount !== undefined ? p.drawCount : -1
+                })),
                 raises_this_hand: npc.raisesThisHand || 0,
                 opp_bet_this_round: opp_bet_this_round,
                 opp_raised_pre: opp_raised_pre,

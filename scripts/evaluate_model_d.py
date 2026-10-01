@@ -52,13 +52,16 @@ def evaluate_model_d_tournament(
     verbose: bool = True,
 ) -> dict:
     """Evaluates Model D against Model C, Model B, and table adversaries."""
-    # Fallback to alternate names if primary not found
-    if not os.path.exists(model_d_path) and os.path.exists("models/model_d_champion.zip"):
-        model_d_path = "models/model_d_champion.zip"
-    if not os.path.exists(model_c_path) and os.path.exists("models/model_c_superhuman.zip"):
-        model_c_path = "models/model_c_superhuman.zip"
-    if not os.path.exists(model_b_path) and os.path.exists("models/model_b_multiplayer.zip"):
-        model_b_path = "models/model_b_multiplayer.zip"
+    # Fallback to archive if primary model_d.zip not found yet
+    if not os.path.exists(model_d_path):
+        for candidate in [
+            "models/model_d.zip",
+            "models/archive/run_1.5m_champion/model_d.zip",
+            "models/archive/run_1.5m_champion/model_d_best.zip",
+        ]:
+            if os.path.exists(candidate):
+                model_d_path = candidate
+                break
 
     if not os.path.exists(model_d_path):
         raise FileNotFoundError(f"Model D checkpoint not found at: {model_d_path}")
@@ -205,7 +208,7 @@ def evaluate_model_d_tournament(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate CardShark-RL Model D Champion")
-    parser.add_argument("--sessions", type=int, default=30)
+    parser.add_argument("--sessions", "--num-sessions", dest="sessions", type=int, default=30, help="Number of tournament sessions")
     parser.add_argument("--model-d", type=str, default="models/model_d.zip")
     parser.add_argument("--model-c", type=str, default="models/model_c.zip")
     parser.add_argument("--model-b", type=str, default="models/model_b.zip")

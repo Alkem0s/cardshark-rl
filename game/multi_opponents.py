@@ -369,6 +369,50 @@ class AdversarialExploiter(MultiPlayerOpponent):
         return standard_math_discard(hand)
 
 
+class RandomCyclingBot(MultiPlayerOpponent):
+    """Heuristic bot that randomly cycles between different archetype behaviors."""
+    def __init__(self, rng: np.random.Generator | None = None, rng_seed: int | None = None, cycle_frequency: int = 1):
+        if rng is None and rng_seed is not None:
+            r = np.random.default_rng(rng_seed)
+        else:
+            r = rng or np.random.default_rng()
+        super().__init__(opponent_id=99, name="Chameleon", rng=r)
+        self.cycle_frequency = cycle_frequency  # Cycle every N hands
+        self.hands_in_current_style = 0
+        self.archetypes = [cls(rng=self.rng) for cls in ARCHETYPE_CLASSES]
+        idx = int(self.rng.integers(0, len(self.archetypes)))
+        self.active_bot = self.archetypes[idx]
+        self.name = f"Chameleon ({self.active_bot.name})"
+
+    def get_style_name(self) -> str:
+        return self.active_bot.name
+
+    def rotate_style(self):
+        idx = int(self.rng.integers(0, len(self.archetypes)))
+        self.active_bot = self.archetypes[idx]
+        self.name = f"Chameleon ({self.active_bot.name})"
+        self.hands_in_current_style = 0
+
+    def on_hand_end(self):
+        self.hands_in_current_style += 1
+        if self.hands_in_current_style >= self.cycle_frequency:
+            self.rotate_style()
+
+    def bet_action(
+        self,
+        hand: List[int],
+        pot: int,
+        bet_to_call: int,
+        phase: str,
+        stack: int,
+        legal_actions: List[int],
+    ) -> int:
+        return self.active_bot.bet_action(hand, pot, bet_to_call, phase, stack, legal_actions)
+
+    def draw_action(self, hand: List[int]) -> List[int]:
+        return self.active_bot.draw_action(hand)
+
+
 ARCHETYPE_CLASSES = [CallingStation, Maniac, Rock, TAG, LAG, AdversarialExploiter]
 NUM_ARCHETYPES = len(ARCHETYPE_CLASSES)
 

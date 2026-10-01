@@ -22,7 +22,7 @@ from game.multi_draw_poker_env import (
     PHASE_PRE_DRAW, PHASE_DRAW, PHASE_POST_DRAW
 )
 from game.multi_opponents import (
-    CallingStation, Maniac, Rock, TAG, LAG, AdversarialExploiter
+    CallingStation, Maniac, Rock, TAG, LAG, AdversarialExploiter, RandomCyclingBot
 )
 
 OBS_DIM = 63
@@ -57,7 +57,12 @@ class CardSharkNPC:
         self.num_seats = num_seats
         self.npc_seat = npc_seat
         self.difficulty = difficulty.lower()
-        self.is_heuristic = self.difficulty in ("casual", "heuristic", "easy", "rock", "maniac", "tag", "lag")
+        self.is_heuristic = self.difficulty in (
+            "beginner", "casual", "wildcard", "heuristic", "easy", "rock", "passive", "tight",
+            "maniac", "aggressive", "tag", "lag", "calling_station", "station",
+            "exploiter", "adversarial", "chameleon", "random_heuristic", "random", "cycle"
+        )
+        self.is_model_a = self.difficulty in ("model_a", "a", "heads_up", "classic")
         self.heuristic_bot = None
         self.model = None
         self.tracker = None
@@ -68,19 +73,24 @@ class CardSharkNPC:
             self._init_neural(model_path)
 
     def _init_heuristic(self):
-        """Initializes a pure rule-based bot."""
+        """Initializes a pure rule-based bot with zero ML dependencies."""
         if self.difficulty in ("maniac", "aggressive"):
             self.heuristic_bot = Maniac()
-        elif self.difficulty in ("rock", "passive", "easy"):
+        elif self.difficulty in ("rock", "passive", "tight", "easy"):
             self.heuristic_bot = Rock()
         elif self.difficulty == "lag":
             self.heuristic_bot = LAG()
-        elif self.difficulty == "calling_station":
+        elif self.difficulty in ("calling_station", "station", "beginner"):
             self.heuristic_bot = CallingStation()
+        elif self.difficulty in ("exploiter", "adversarial"):
+            self.heuristic_bot = AdversarialExploiter()
+        elif self.difficulty in ("chameleon", "random_heuristic", "random", "cycle", "wildcard"):
+            self.heuristic_bot = RandomCyclingBot()
         else:
             self.heuristic_bot = TAG()
         self.obs_dim = 0
         self.is_superhuman = False
+        self.is_model_a = False
         print(f"[CardSharkNPC] Initialized pure rule-based bot [{self.heuristic_bot.name}].")
 
     def _init_neural(self, model_path: Optional[str]):
@@ -100,12 +110,14 @@ class CardSharkNPC:
         self.tracker = TableOpponentTracker(num_seats=self.num_seats)
 
         if model_path is None:
-            if self.difficulty in ("champion", "expert", "model_d", "d"):
-                model_path = "models/model_d.zip" if os.path.exists("models/model_d.zip") else "models/model_d_champion.zip"
-            elif self.difficulty in ("hard", "superhuman", "model_c", "c"):
-                model_path = "models/model_c.zip" if os.path.exists("models/model_c.zip") else "models/model_c_superhuman.zip"
+            if self.is_model_a:
+                model_path = "models/model_a.zip"
+            elif self.difficulty in ("grandmaster", "champion", "expert", "model_d", "d"):
+                model_path = "models/model_d.zip"
+            elif self.difficulty in ("master", "hard", "superhuman", "model_c", "c"):
+                model_path = "models/model_c.zip"
             else:
-                model_path = "models/model_b.zip" if os.path.exists("models/model_b.zip") else "models/model_b_multiplayer.zip"
+                model_path = "models/model_b.zip"
 
         if not os.path.exists(model_path):
             print(f"[CardSharkNPC] Warning: Checkpoint {model_path} not found. Falling back to heuristic bot.")
@@ -116,28 +128,45 @@ class CardSharkNPC:
         print(f"[CardSharkNPC] Loading trained policy [{self.difficulty.upper()}] from: {model_path}")
         self.model = MaskablePPO.load(model_path)
         self.obs_dim = self.model.observation_space.shape[0]
+        self.is_model_a = (self.obs_dim in (26, 33))
         self.is_superhuman = (self.obs_dim == SUPERHUMAN_OBS_DIM)
 
     def get_action(
         self,
         npc_hand: List[Any],
-        pot: int,
-        bet_to_call: int,
-        phase: str,
-        npc_chips: int,
-        total_table_chips: int,
-        button_seat: int,
-        seat_chips: List[int],
-        seat_invested: List[int],
-        seat_alive: List[bool],
-        seat_in_hand: List[bool],
-        seat_draw_counts: List[int],
+        pot: int = 0,
+        bet_to_call: int = 0,
+        phase: str = "pre_draw",
+        npc_chips: int = 1000,
+        total_table_chips: int = 5000,
+        button_seat: int = 0,
+        seat_chips: Optional[List[int]] = None,
+        seat_invested: Optional[List[int]] = None,
+        seat_alive: Optional[List[bool]] = None,
+        seat_in_hand: Optional[List[bool]] = None,
+        seat_draw_counts: Optional[List[int]] = None,
         big_blind: int = 2,
         seat_pre_draw_actions: Optional[List[int]] = None,
         seat_post_draw_actions: Optional[List[int]] = None,
         seat_pre_draw_bets: Optional[List[int]] = None,
         seat_post_draw_bets: Optional[List[int]] = None,
+        npc_seat: Optional[int] = None,
     ) -> dict:
+        if npc_seat is not None:
+            self.npc_seat = npc_seat
+
+        # Default table states if not provided
+        if seat_chips is None:
+            seat_chips = [npc_chips] * self.num_seats
+        if seat_invested is None:
+            seat_invested = [pot // max(1, self.num_seats)] * self.num_seats
+        if seat_alive is None:
+            seat_alive = [True] * self.num_seats
+        if seat_in_hand is None:
+            seat_in_hand = [True] * self.num_seats
+        if seat_draw_counts is None:
+            seat_draw_counts = [-1] * self.num_seats
+
         # Normalize hand cards to integer indices 0..51
         npc_hand = [parse_card_to_int(c) for c in npc_hand]
         if len(npc_hand) != 5:
@@ -154,7 +183,18 @@ class CardSharkNPC:
                 big_blind=big_blind,
             )
 
-        # 2. Build observation vector & mask for neural policy
+        # 2. Handle Model A (1v1 Heads-Up Adapter)
+        if self.is_model_a:
+            return self._get_model_a_action(
+                npc_hand=npc_hand,
+                pot=pot,
+                bet_to_call=bet_to_call,
+                phase=phase,
+                npc_chips=npc_chips,
+                button_seat=button_seat,
+            )
+
+        # 3. Build observation vector & mask for neural policy
         obs = self._build_observation(
             npc_hand=npc_hand,
             pot=pot,
@@ -179,6 +219,77 @@ class CardSharkNPC:
         action_id = int(action_id)
 
         return self._translate_action(action_id, phase, pot, bet_to_call, npc_chips, big_blind)
+
+    def _get_model_a_action(
+        self,
+        npc_hand: List[int],
+        pot: int,
+        bet_to_call: int,
+        phase: str,
+        npc_chips: int,
+        button_seat: int,
+    ) -> dict:
+        """Adapts 1v1 Model A policy for multi-player table context."""
+        hand_norm = []
+        for c in npc_hand:
+            hand_norm.extend([normalize_rank(c), normalize_suit(c)])
+
+        hand_score = evaluate_hand(npc_hand)
+        hand_cat_val = hand_category(npc_hand)
+        hand_score_norm = normalize_hand_score(hand_score)
+        hand_cat_norm = hand_cat_val / 8.0
+
+        pot_norm = min(pot / 50.0, 1.0)
+        btc_norm = min(bet_to_call / 20.0, 1.0)
+        pot_odds = min(bet_to_call / max(1, pot), 1.0)
+
+        phase_vec = [0.0, 0.0, 0.0]
+        if phase == "pre_draw":
+            phase_vec[0] = 1.0
+        elif phase == "draw":
+            phase_vec[1] = 1.0
+        else:
+            phase_vec[2] = 1.0
+
+        opp_draw = -1.0
+        position = 1.0 if self.npc_seat == button_seat else 0.0
+        raises = 0.0
+        opp_aggression = 1.0 if bet_to_call > 0 else 0.0
+        opp_raised_pre = 0.0
+
+        obs = hand_norm + [hand_cat_norm, hand_score_norm, pot_norm, btc_norm, pot_odds] + phase_vec + [opp_draw, position, raises, opp_aggression, opp_raised_pre]
+
+        if self.obs_dim == 26:
+            obs.extend([0.0, 0.0, 1.0])
+        elif self.obs_dim == 33:
+            obs.extend([0.5, 0.2, 0.3, 0.5, 0.5, 0.5, 0.3, 0.3, 0.2, 0.2])
+
+        obs_arr = np.array(obs, dtype=np.float32)
+
+        mask = np.zeros(35, dtype=np.int8)
+        if phase in ("pre_draw", "post_draw"):
+            mask[0] = 1  # Fold
+            mask[1] = 1  # Call
+            if npc_chips > bet_to_call:
+                mask[2] = 1  # Raise
+        elif phase == "draw":
+            mask[3:35] = 1  # 32 Draw bitmasks
+
+        action, _ = self.model.predict(obs_arr, action_masks=mask, deterministic=True)
+        action = int(action)
+
+        if action == 0:
+            return {"action_type": "fold", "raise_amount": 0, "discard_indices": [], "raw_action_id": 0, "inferred_tells": {}}
+        elif action == 1:
+            return {"action_type": "call", "raise_amount": 0, "discard_indices": [], "raw_action_id": 1, "inferred_tells": {}}
+        elif action == 2:
+            min_raise = max(2, bet_to_call * 2) if bet_to_call > 0 else 2
+            amt = min(min_raise, npc_chips)
+            return {"action_type": "raise", "raise_amount": amt, "discard_indices": [], "raw_action_id": 2, "inferred_tells": {}}
+        else:
+            discard_bitmask = action - 3
+            discard_indices = [i for i in range(5) if (discard_bitmask >> i) & 1]
+            return {"action_type": "draw", "raise_amount": 0, "discard_indices": discard_indices, "raw_action_id": action, "inferred_tells": {}}
 
     def _get_heuristic_action(self, npc_hand, pot, bet_to_call, phase, npc_chips, big_blind):
         """Translates heuristic bot decision to game server response format."""
@@ -402,6 +513,35 @@ class CardSharkNPC:
             "raw_action_id": action_id,
             "inferred_tells": self.get_opponent_profiles(),
         }
+
+    def record_hand_outcome(
+        self,
+        seat_idx: int = 0,
+        vpip: bool = False,
+        pfr: bool = False,
+        af_bet: bool = False,
+        af_call: bool = False,
+        folded: bool = False,
+        draw_count: int = 0,
+    ):
+        """Pass showdown/hand statistics to the Bayesian tracker or heuristic bot."""
+        if self.is_heuristic:
+            if hasattr(self.heuristic_bot, "on_hand_end"):
+                self.heuristic_bot.on_hand_end()
+            return
+
+        if self.tracker is not None:
+            try:
+                self.tracker.record_seat_hand(
+                    seat_idx=seat_idx,
+                    vpip=vpip,
+                    pfr=pfr,
+                    post_draw_raised=af_bet,
+                    faced_raise_and_folded=folded,
+                    cards_drawn=draw_count if draw_count >= 0 else None,
+                )
+            except Exception:
+                pass
 
     def record_hand_conclusion(
         self,

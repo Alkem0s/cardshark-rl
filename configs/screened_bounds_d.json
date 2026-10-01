@@ -1,0 +1,36 @@
+{
+  "embed_dim_choices": [
+    32,
+    64
+  ],
+  "pooling_choices": [
+    "mean",
+    "max",
+    "attention",
+    "both"
+  ],
+  "card_features_dim_choices": [
+    32,
+    64
+  ],
+  "n_layers_choices": [
+    3,
+    4
+  ],
+  "lr_min": 0.00012,
+  "lr_max": 0.00042,
+  "batch_size_choices": [
+    64,
+    128
+  ],
+  "n_steps_choices": [
+    1024,
+    1536
+  ],
+  "clip_range_min": 0.197,
+  "clip_range_max": 0.25,
+  "ent_coef_min": 0.004,
+  "ent_coef_max": 0.015,
+  "fold_penalty_min": 0.14,
+  "fold_penalty_max": 0.33
+}

@@ -97,38 +97,82 @@ class LeagueOpponent(MultiPlayerOpponent):
 
 
 class LeaguePool:
-    """Manages the pool of sparring agents (frozen Model B, historical Model C/D checkpoints, and heuristics)."""
+    """
+    Manages the multi-agent co-evolutionary league sparring pool (Prioritized Fictitious Self-Play).
+    Features:
+    1. Historical Baseline Anchors: Model B & C historical checkpoints prevent catastrophic forgetting.
+    2. Active Self-Play Snapshots: Rolling Model D snapshots sampled with recency weighting to push the meta.
+    3. Curriculum Neural Probability Warmup: Ramps neural opponent density from min_prob to target_prob.
+    4. Heuristic Anchors: Retains diverse archetypes (TAG, Maniac, Rock, CallingStation, AdversarialExploiter).
+    """
 
     def __init__(
         self,
         base_model_path: str = "models/model_b.zip",
         league_dir: str = "models/league",
-        neural_opponent_prob: float = 0.50,
+        neural_opponent_prob: float = 0.65,
+        min_neural_prob: float = 0.35,
+        curriculum_warmup_steps: int = 250_000,
+        self_play_prob: float = 0.50,
+        exclude_prefix: Optional[str] = None,
     ):
         self.base_model_path = base_model_path
         self.league_dir = league_dir
-        self.neural_opponent_prob = neural_opponent_prob
+        self.target_neural_prob = neural_opponent_prob
+        self.min_neural_prob = min_neural_prob
+        self.curriculum_warmup_steps = curriculum_warmup_steps
+        self.self_play_prob = self_play_prob
+        self.exclude_prefix = exclude_prefix
+
+        self.historical_checkpoints: List[str] = []
+        self.active_snapshots: List[str] = []
         self.checkpoints: List[str] = []
+        self.current_step: int = 0
+
         os.makedirs(self.league_dir, exist_ok=True)
         self.refresh_checkpoints()
 
+    @property
+    def neural_opponent_prob(self) -> float:
+        """Dynamic neural opponent probability based on curriculum step."""
+        if self.curriculum_warmup_steps <= 0:
+            return self.target_neural_prob
+        progress = min(1.0, max(0.0, self.current_step / self.curriculum_warmup_steps))
+        return self.min_neural_prob + progress * (self.target_neural_prob - self.min_neural_prob)
+
+    def set_step(self, step: int):
+        """Updates current training timestep for curriculum scheduling."""
+        self.current_step = step
+
     def refresh_checkpoints(self):
         """Scans the filesystem for valid model checkpoints."""
-        self.checkpoints = []
-        # Support both model_b.zip and legacy model_b_multiplayer.zip
-        for candidate in [self.base_model_path, "models/model_b_multiplayer.zip"]:
-            if os.path.exists(candidate) and candidate not in self.checkpoints:
-                self.checkpoints.append(candidate)
+        self.historical_checkpoints = []
+
+        # Seed base models (Model B baseline and Model C superhuman predecessor)
+        for candidate in [
+            self.base_model_path,
+            "models/model_b.zip",
+            "models/model_c.zip",
+        ]:
+            if os.path.exists(candidate) and candidate not in self.historical_checkpoints:
+                self.historical_checkpoints.append(candidate)
+
         if os.path.exists(self.league_dir):
             for fname in sorted(os.listdir(self.league_dir)):
                 if fname.endswith(".zip"):
+                    if self.exclude_prefix and fname.startswith(self.exclude_prefix):
+                        continue
                     full_p = os.path.join(self.league_dir, fname)
-                    if full_p not in self.checkpoints:
-                        self.checkpoints.append(full_p)
+                    if full_p not in self.historical_checkpoints:
+                        self.historical_checkpoints.append(full_p)
+
+        self.checkpoints = list(self.historical_checkpoints) + list(self.active_snapshots)
 
     def add_snapshot(self, model_path: str):
-        """Adds a newly created training snapshot to the sparring pool."""
-        if os.path.exists(model_path) and model_path not in self.checkpoints:
+        """Adds a newly created training snapshot to the self-play sparring pool."""
+        if os.path.exists(model_path) and model_path not in self.active_snapshots:
+            self.active_snapshots.append(model_path)
+        if model_path not in self.checkpoints:
             self.checkpoints.append(model_path)
 
     def sample_opponent(
@@ -136,10 +180,23 @@ class LeaguePool:
         seat_idx: int = 0,
         rng: Optional[np.random.Generator] = None,
     ) -> MultiPlayerOpponent:
-        """Samples either a neural LeagueOpponent or a heuristic archetype."""
+        """Samples either a neural LeagueOpponent or a heuristic archetype with curriculum and PFSP weighting."""
         r = rng or np.random.default_rng()
-        if self.checkpoints and r.random() < self.neural_opponent_prob:
-            chosen_path = str(r.choice(self.checkpoints))
+        prob = self.neural_opponent_prob
+
+        if self.checkpoints and r.random() < prob:
+            # Decide between Active Self-Play vs Historical Anchor Pool
+            if self.active_snapshots and r.random() < self.self_play_prob:
+                # Recency-weighted sampling favoring recent self-play checkpoints
+                n = len(self.active_snapshots)
+                weights = np.arange(1, n + 1, dtype=float) ** 1.5
+                probs = weights / weights.sum()
+                chosen_path = str(r.choice(self.active_snapshots, p=probs))
+            elif self.historical_checkpoints:
+                chosen_path = str(r.choice(self.historical_checkpoints))
+            else:
+                chosen_path = str(r.choice(self.checkpoints))
+
             try:
                 return LeagueOpponent(
                     model_path=chosen_path,

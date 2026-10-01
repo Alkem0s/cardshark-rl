@@ -89,12 +89,33 @@ class PokerRequestHandler(BaseHTTPRequestHandler):
 
             parsed_hand = [{"rank": c.get("rank", "2"), "suit": c.get("suit", "♠")} for c in hand]
 
+            npc_chips = int(data.get("npc_chips", 1000))
+            npc_seat = int(data.get("npc_seat", 0))
+            button_seat = int(data.get("button_seat", 0))
+            players_data = data.get("players", [])
+
             num_seats = 5
-            seat_chips = [1000] * num_seats
-            seat_invested = [pot // num_seats] * num_seats
-            seat_alive = [True] * num_seats
-            seat_in_hand = [True] * num_seats
+            seat_chips = [0] * num_seats
+            seat_invested = [0] * num_seats
+            seat_alive = [False] * num_seats
+            seat_in_hand = [False] * num_seats
             seat_draw_counts = [-1] * num_seats
+
+            if players_data:
+                for i, p in enumerate(players_data[:num_seats]):
+                    seat_chips[i] = int(p.get("chips", 0))
+                    seat_invested[i] = int(p.get("invested", 0))
+                    seat_alive[i] = bool(p.get("is_alive", True))
+                    seat_in_hand[i] = bool(not p.get("folded", False) and seat_alive[i])
+                    seat_draw_counts[i] = int(p.get("draw_count", -1))
+                total_table_chips = max(1, sum(seat_chips) + pot)
+            else:
+                seat_chips = [1000] * num_seats
+                seat_invested = [pot // num_seats] * num_seats
+                seat_alive = [True] * num_seats
+                seat_in_hand = [True] * num_seats
+                seat_draw_counts = [-1] * num_seats
+                total_table_chips = 5000
 
             try:
                 action_res = npc.get_action(
@@ -102,14 +123,15 @@ class PokerRequestHandler(BaseHTTPRequestHandler):
                     pot=pot,
                     bet_to_call=bet_to_call,
                     phase=phase,
-                    npc_chips=1000,
-                    total_table_chips=5000,
-                    button_seat=0,
+                    npc_chips=npc_chips,
+                    total_table_chips=total_table_chips,
+                    button_seat=button_seat,
                     seat_chips=seat_chips,
                     seat_invested=seat_invested,
                     seat_alive=seat_alive,
                     seat_in_hand=seat_in_hand,
                     seat_draw_counts=seat_draw_counts,
+                    npc_seat=npc_seat,
                 )
 
                 resp_payload = {
