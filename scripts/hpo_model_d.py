@@ -59,7 +59,7 @@ torch.set_num_threads(1)
 
 import optuna
 from optuna.exceptions import TrialPruned
-from optuna.pruners import MedianPruner
+from optuna.pruners import MedianPruner, PercentilePruner
 from optuna.samplers import TPESampler
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -216,6 +216,11 @@ class ModelDTrialEvalCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         if self.num_timesteps - self._last_eval_step >= self.eval_interval:
+            # Don't prune at or near final step — let the trial complete and run final tournament evaluation!
+            total_ts = getattr(self.model, "_total_timesteps", None)
+            if total_ts is not None and self.num_timesteps >= total_ts - 2000:
+                return True
+
             self._last_eval_step = self.num_timesteps
             eval_res = evaluate_model_d_sessions(
                 model=self.model,
@@ -304,6 +309,7 @@ def run_single_trial(
             pooling=pooling,
             card_features_dim=card_features_dim,
             game_features_dim=64,
+            slot_features_dim=config.get("slot_features_dim", 16),
         ),
         net_arch=dict(pi=net_arch, vf=net_arch),
     )
@@ -335,8 +341,8 @@ def run_single_trial(
 
     eval_callback = ModelDTrialEvalCallback(
         trial=trial,
-        eval_interval=max(250, timesteps // 4) if timesteps <= 5000 else max(5_000, timesteps // 4),
-        eval_sessions=min(10, eval_sessions),
+        eval_interval=max(500, timesteps // 2) if timesteps <= 5000 else max(10_000, timesteps // 2),
+        eval_sessions=min(18, eval_sessions),
         blind_escalation=blind_escalation,
         seed=seed + trial.number,
     )
@@ -394,7 +400,7 @@ def sample_attention_architecture(trial: optuna.Trial, bounds: Optional[dict] = 
         bounds = load_screened_bounds()
 
     embed_choices = bounds.get("embed_dim_choices", [32, 64]) if bounds else [32, 64]
-    pooling_choices = bounds.get("pooling_choices", ["mean", "max", "attention", "both"]) if bounds else ["mean", "max", "attention", "both"]
+    pooling_choices = bounds.get("pooling_choices", ["both", "attention", "mean"]) if bounds else ["both", "attention", "mean"]
     card_dim_choices = bounds.get("card_features_dim_choices", [32, 64]) if bounds else [32, 64]
     n_layers_choices = bounds.get("n_layers_choices", [3, 4]) if bounds else [3, 4]
 
@@ -404,6 +410,8 @@ def sample_attention_architecture(trial: optuna.Trial, bounds: Optional[dict] = 
 
     pooling = trial.suggest_categorical("pooling", pooling_choices)
     card_features_dim = trial.suggest_categorical("card_features_dim", card_dim_choices)
+    slot_dim_choices = bounds.get("slot_features_dim_choices", [12, 16, 24]) if bounds else [12, 16, 24]
+    slot_features_dim = trial.suggest_categorical("slot_features_dim", slot_dim_choices)
     n_layers = trial.suggest_categorical("n_layers", n_layers_choices)
     net_arch = [256] * n_layers
 
@@ -412,6 +420,7 @@ def sample_attention_architecture(trial: optuna.Trial, bounds: Optional[dict] = 
         "num_heads": num_heads,
         "pooling": pooling,
         "card_features_dim": card_features_dim,
+        "slot_features_dim": slot_features_dim,
         "net_arch": net_arch,
     }
 
@@ -421,14 +430,14 @@ def sample_optimization_dynamics(trial: optuna.Trial, bounds: Optional[dict] = N
     if bounds is None:
         bounds = load_screened_bounds()
 
-    lr_min = bounds.get("lr_min", 0.00012) if bounds else 0.00012
-    lr_max = bounds.get("lr_max", 0.00042) if bounds else 0.00042
+    lr_min = bounds.get("lr_min", 0.00010) if bounds else 0.00010
+    lr_max = bounds.get("lr_max", 0.00035) if bounds else 0.00035
     batch_choices = bounds.get("batch_size_choices", [64, 128]) if bounds else [64, 128]
     n_steps_choices = bounds.get("n_steps_choices", [1024, 1536]) if bounds else [1024, 1536]
-    clip_min = bounds.get("clip_range_min", 0.197) if bounds else 0.197
+    clip_min = bounds.get("clip_range_min", 0.180) if bounds else 0.180
     clip_max = bounds.get("clip_range_max", 0.250) if bounds else 0.250
-    ent_min = bounds.get("ent_coef_min", 0.004) if bounds else 0.004
-    ent_max = bounds.get("ent_coef_max", 0.015) if bounds else 0.015
+    ent_min = bounds.get("ent_coef_min", 0.003) if bounds else 0.003
+    ent_max = bounds.get("ent_coef_max", 0.012) if bounds else 0.012
 
     learning_rate = trial.suggest_float("learning_rate", lr_min, lr_max, log=True)
     min_lr_ratio = trial.suggest_float("min_lr_ratio", 0.08, 0.20)
@@ -467,10 +476,11 @@ def sample_tournament_dynamics(trial: optuna.Trial, bounds: Optional[dict] = Non
     if bounds is None:
         bounds = load_screened_bounds()
 
-    fold_min = bounds.get("fold_penalty_min", 0.14) if bounds else 0.14
-    fold_max = bounds.get("fold_penalty_max", 0.33) if bounds else 0.33
+    fold_min = bounds.get("fold_penalty_min", 0.05) if bounds else 0.05
+    fold_max = bounds.get("fold_penalty_max", 0.15) if bounds else 0.15
     fold_penalty = trial.suggest_float("fold_penalty", fold_min, fold_max)
-    blind_escalation = trial.suggest_categorical("blind_escalation", [14, 15, 16])
+    blind_choices = bounds.get("blind_escalation_choices", [14, 15, 16]) if bounds else [14, 15, 16]
+    blind_escalation = trial.suggest_categorical("blind_escalation", blind_choices)
     return {
         "fold_penalty": fold_penalty,
         "blind_escalation": blind_escalation,
@@ -484,6 +494,7 @@ def sample_screening_space(trial: optuna.Trial) -> dict:
     num_heads = trial.suggest_categorical("num_heads", num_heads_candidates if num_heads_candidates else [2])
     pooling = trial.suggest_categorical("pooling", ["mean", "max", "attention", "both"])
     card_features_dim = trial.suggest_categorical("card_features_dim", [16, 32, 64])
+    slot_features_dim = trial.suggest_categorical("slot_features_dim", [12, 16, 24])
     n_layers = trial.suggest_categorical("n_layers", [2, 3, 4])
     net_arch = [256] * n_layers
 
@@ -503,7 +514,7 @@ def sample_screening_space(trial: optuna.Trial) -> dict:
     max_grad_norm = trial.suggest_float("max_grad_norm", 0.35, 0.90)
 
     # Wide fold penalty (too low: calling station bleed; too high: chronic folding)
-    fold_penalty = trial.suggest_float("fold_penalty", 0.08, 0.45)
+    fold_penalty = trial.suggest_float("fold_penalty", 0.05, 0.25)
     blind_escalation = trial.suggest_categorical("blind_escalation", [12, 15, 18])
 
     return {
@@ -511,6 +522,7 @@ def sample_screening_space(trial: optuna.Trial) -> dict:
         "num_heads": num_heads,
         "pooling": pooling,
         "card_features_dim": card_features_dim,
+        "slot_features_dim": slot_features_dim,
         "net_arch": net_arch,
         "n_layers": n_layers,
         "learning_rate": learning_rate,
@@ -537,9 +549,10 @@ def sample_screening_space(trial: optuna.Trial) -> dict:
 
 DEFAULT_ARCHITECTURE = {
     "embed_dim": 64,
-    "num_heads": 4,
-    "pooling": "attention",
+    "num_heads": 8,
+    "pooling": "both",
     "card_features_dim": 32,
+    "slot_features_dim": 16,
     "net_arch": [256, 256, 256],
 }
 
@@ -559,14 +572,49 @@ DEFAULT_OPTIMIZATION = {
 }
 
 DEFAULT_TOURNAMENT = {
-    "fold_penalty": 0.22,
-    "blind_escalation": 15,
+    "fold_penalty": 0.10,
+    "blind_escalation": 14,
 }
 
 
 # ---------------------------------------------------------------------------
 # Staged / Decoupled Search Workflow
 # ---------------------------------------------------------------------------
+
+def load_params_into_subspaces(params_path: str) -> Tuple[dict, dict, dict, float]:
+    """Loads a previously saved best_params_d.json into active_arch, active_opt, active_tourn."""
+    with open(params_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    arch = {
+        "embed_dim": data.get("embed_dim", DEFAULT_ARCHITECTURE["embed_dim"]),
+        "num_heads": data.get("num_heads", DEFAULT_ARCHITECTURE["num_heads"]),
+        "pooling": data.get("pooling", DEFAULT_ARCHITECTURE["pooling"]),
+        "card_features_dim": data.get("card_features_dim", DEFAULT_ARCHITECTURE["card_features_dim"]),
+        "slot_features_dim": data.get("slot_features_dim", DEFAULT_ARCHITECTURE.get("slot_features_dim", 16)),
+        "net_arch": data.get("net_arch", DEFAULT_ARCHITECTURE["net_arch"]),
+    }
+    opt = {
+        "learning_rate": data.get("learning_rate", DEFAULT_OPTIMIZATION["learning_rate"]),
+        "min_lr": data.get("min_lr", DEFAULT_OPTIMIZATION["min_lr"]),
+        "n_restart_cycles": data.get("n_restart_cycles", DEFAULT_OPTIMIZATION["n_restart_cycles"]),
+        "n_steps": data.get("n_steps", DEFAULT_OPTIMIZATION["n_steps"]),
+        "batch_size": data.get("batch_size", DEFAULT_OPTIMIZATION["batch_size"]),
+        "n_epochs": data.get("n_epochs", DEFAULT_OPTIMIZATION["n_epochs"]),
+        "gamma": data.get("gamma", DEFAULT_OPTIMIZATION["gamma"]),
+        "gae_lambda": data.get("gae_lambda", DEFAULT_OPTIMIZATION["gae_lambda"]),
+        "clip_range": data.get("clip_range", DEFAULT_OPTIMIZATION["clip_range"]),
+        "ent_coef": data.get("ent_coef", DEFAULT_OPTIMIZATION["ent_coef"]),
+        "vf_coef": data.get("vf_coef", DEFAULT_OPTIMIZATION["vf_coef"]),
+        "max_grad_norm": data.get("max_grad_norm", DEFAULT_OPTIMIZATION["max_grad_norm"]),
+    }
+    tourn = {
+        "fold_penalty": data.get("fold_penalty", DEFAULT_TOURNAMENT["fold_penalty"]),
+        "blind_escalation": data.get("blind_escalation", DEFAULT_TOURNAMENT["blind_escalation"]),
+    }
+    score = data.get("fitness_score", -float("inf"))
+    return arch, opt, tourn, score
+
 
 def run_staged_hpo(
     n_trials: int = 24,
@@ -575,18 +623,23 @@ def run_staged_hpo(
     eval_sessions: int = 35,
     seed: int = 42,
     params_path: str = "configs/best_params_d.json",
+    n_cycles: int = 2,
+    start_cycle: int = 1,
+    resume: bool = False,
     logger: Optional[logging.Logger] = None,
 ):
     """
-    Executes Decoupled / Staged HPO across 3 orthogonal subspaces:
-    - Stage 1: Card Attention Feature Extractor Architecture (Trials: ~25%)
-    - Stage 2: Coupled Gradient Descent Dynamics (Trials: ~60%)
-    - Stage 3: Tournament & Reward Shaping (Trials: ~15%)
+    Executes Decoupled / Staged HPO across 3 orthogonal subspaces using Iterative Block Coordinate Descent:
+    - Pass 1: Initial coarse coordinate search starting from defaults.
+    - Pass 2+: Iterative refinement using empirical champions from prior passes as active context.
+    - Subspace 1: Card Attention Feature Extractor Architecture (~25% of cycle budget)
+    - Subspace 2: Coupled Gradient Descent Dynamics (~60% of cycle budget)
+    - Subspace 3: Tournament & Reward Shaping Dynamics (~15% of cycle budget)
     """
     print("\n============================================================")
-    print("  STARTING MODEL D STAGED / DECOUPLED HPO PIPELINE")
-    print("============================================================")
-    print(f"  Total Budget: {n_trials} trials | Timesteps/Trial: {timesteps:,} | Parallel Envs: {n_envs}")
+    print(f"  STARTING MODEL D STAGED ITERATIVE HPO PIPELINE ({n_cycles} PASSES)")
+    total_trials = n_trials * n_cycles
+    print(f"  Budget: {n_trials} trials/pass ({total_trials} total across {n_cycles} passes) | Timesteps/Trial: {timesteps:,} | Parallel Envs: {n_envs}")
 
     league_pool = LeaguePool(
         base_model_path="models/model_b_multiplayer.zip",
@@ -594,9 +647,10 @@ def run_staged_hpo(
         neural_opponent_prob=0.50,
     )
 
-    trials_stage1 = max(4, int(n_trials * 0.25))
-    trials_stage2 = max(6, int(n_trials * 0.60))
-    trials_stage3 = max(2, n_trials - trials_stage1 - trials_stage2)
+    trials_per_cycle = n_trials
+    trials_stage1 = max(1, int(trials_per_cycle * 0.25))
+    trials_stage2 = max(1, int(trials_per_cycle * 0.60))
+    trials_stage3 = max(1, trials_per_cycle - trials_stage1 - trials_stage2)
 
     active_arch = dict(DEFAULT_ARCHITECTURE)
     active_opt = dict(DEFAULT_OPTIMIZATION)
@@ -605,130 +659,158 @@ def run_staged_hpo(
     global_best_score = -float("inf")
     global_best_config = {}
 
-    # --- STAGE 1: Representation & Attention Architecture ---
-    print(f"\n>>> [STAGE 1/3] Optimizing Card Attention Architecture ({trials_stage1} trials) <<<")
-    study_arch = optuna.create_study(direction="maximize", sampler=TPESampler(seed=seed))
+    if (resume or start_cycle > 1) and os.path.exists(params_path):
+        try:
+            active_arch, active_opt, active_tourn, prev_score = load_params_into_subspaces(params_path)
+            if prev_score is not None and prev_score != -float("inf"):
+                global_best_score = prev_score
+            print(f"\n  [Resume] Successfully loaded prior champion parameters from: {params_path}")
+            if global_best_score != -float("inf"):
+                print(f"    - Baseline Fitness Score: {global_best_score:+.2f}")
+            print(f"    - Active Architecture: {active_arch}")
+            print(f"    - Active Optimizer: LR={active_opt['learning_rate']:.6f}, Ent={active_opt['ent_coef']:.5f}")
+            print(f"    - Active Tournament: Fold={active_tourn['fold_penalty']:.3f}, Blinds={active_tourn['blind_escalation']}")
+        except Exception as e:
+            print(f"  [Resume] Warning: Could not parse {params_path} ({e}), starting from defaults.")
 
-    def objective_stage1(trial: optuna.Trial) -> float:
-        nonlocal global_best_score, global_best_config
-        arch_config = sample_attention_architecture(trial)
-        full_config = {**arch_config, **active_opt, **active_tourn}
+    end_cycle = start_cycle + n_cycles - 1
+    for cycle in range(start_cycle, end_cycle + 1):
+        print(f"\n{'=' * 60}")
+        print(f"  PASS {cycle} OF BLOCK COORDINATE DESCENT")
+        print(f"{'=' * 60}")
+        if cycle > 1 or resume:
+            print("  Reusing Best Empirical Opposing Parameters from Previous Pass:")
+            print(f"    - Active Architecture: {active_arch}")
+            print(f"    - Active Optimizer: LR={active_opt['learning_rate']:.6f}, Ent={active_opt['ent_coef']:.5f}")
+            print(f"    - Active Tournament: Fold={active_tourn['fold_penalty']:.3f}, Blinds={active_tourn['blind_escalation']}")
 
-        score, eval_res = run_single_trial(
-            config=full_config,
-            trial=trial,
-            timesteps=timesteps,
-            n_envs=n_envs,
-            eval_sessions=eval_sessions,
-            seed=seed,
-            league_pool=league_pool,
+        # --- STAGE 1: Representation & Attention Architecture ---
+        print(f"\n>>> [PASS {cycle} - STAGE 1/3] Optimizing Card Attention Architecture ({trials_stage1} trials) <<<")
+        study_arch = optuna.create_study(direction="maximize", sampler=TPESampler(seed=seed + cycle * 100))
+
+        def objective_stage1(trial: optuna.Trial) -> float:
+            nonlocal global_best_score, global_best_config
+            arch_config = sample_attention_architecture(trial)
+            full_config = {**arch_config, **active_opt, **active_tourn}
+
+            score, eval_res = run_single_trial(
+                config=full_config,
+                trial=trial,
+                timesteps=timesteps,
+                n_envs=n_envs,
+                eval_sessions=eval_sessions,
+                seed=seed + cycle * 100 + trial.number,
+                league_pool=league_pool,
+            )
+
+            if score > global_best_score:
+                global_best_score = score
+                global_best_config = dict(full_config)
+                global_best_config["fitness_score"] = round(score, 2)
+                global_best_config.update(eval_res)
+                save_best_params(global_best_config, params_path)
+
+            if logger:
+                logger.info(f"[Pass {cycle} - Stage 1] Trial {trial.number} | Score: {score:+.2f} | Arch: {arch_config}")
+            return score
+
+        study_arch.optimize(objective_stage1, n_trials=trials_stage1)
+        best_arch_trial = study_arch.best_trial
+        active_arch["embed_dim"] = best_arch_trial.params["embed_dim"]
+        active_arch["num_heads"] = best_arch_trial.params["num_heads"]
+        active_arch["pooling"] = best_arch_trial.params["pooling"]
+        active_arch["card_features_dim"] = best_arch_trial.params["card_features_dim"]
+        active_arch["slot_features_dim"] = best_arch_trial.params.get("slot_features_dim", 16)
+        active_arch["net_arch"] = [256] * best_arch_trial.params["n_layers"]
+        print(f"  >>> Stage 1 Complete! Active Architecture: {active_arch} (Cycle Best: {study_arch.best_value:+.2f})")
+
+        # --- STAGE 2: Coupled Gradient Descent Dynamics ---
+        print(f"\n>>> [PASS {cycle} - STAGE 2/3] Optimizing Coupled Gradient Descent Dynamics ({trials_stage2} trials) <<<")
+        # In Optuna (maximize): percentile=75.0 keeps the top 75% of trials and only prunes the bottom 25% disasters
+        pruner = PercentilePruner(percentile=75.0, n_startup_trials=4, n_warmup_steps=max(1000, timesteps // 2))
+        study_opt = optuna.create_study(
+            direction="maximize",
+            sampler=TPESampler(multivariate=True, group=True, seed=seed + cycle * 100 + 1),
+            pruner=pruner,
         )
 
-        if score > global_best_score:
-            global_best_score = score
-            global_best_config = dict(full_config)
-            global_best_config["fitness_score"] = round(score, 2)
-            global_best_config.update(eval_res)
-            save_best_params(global_best_config, params_path)
+        def objective_stage2(trial: optuna.Trial) -> float:
+            nonlocal global_best_score, global_best_config
+            opt_config = sample_optimization_dynamics(trial)
+            full_config = {**active_arch, **opt_config, **active_tourn}
 
-        if logger:
-            logger.info(f"[Stage 1] Trial {trial.number} | Score: {score:+.2f} | Arch: {arch_config}")
-        return score
+            score, eval_res = run_single_trial(
+                config=full_config,
+                trial=trial,
+                timesteps=timesteps,
+                n_envs=n_envs,
+                eval_sessions=eval_sessions,
+                seed=seed + cycle * 100 + 100 + trial.number,
+                league_pool=league_pool,
+            )
 
-    study_arch.optimize(objective_stage1, n_trials=trials_stage1)
-    best_arch_trial = study_arch.best_trial
-    active_arch["embed_dim"] = best_arch_trial.params["embed_dim"]
-    active_arch["num_heads"] = best_arch_trial.params["num_heads"]
-    active_arch["pooling"] = best_arch_trial.params["pooling"]
-    active_arch["card_features_dim"] = best_arch_trial.params["card_features_dim"]
-    active_arch["net_arch"] = [256] * best_arch_trial.params["n_layers"]
-    print(f"  >>> Stage 1 Complete! Best Architecture: {active_arch} (Score: {study_arch.best_value:+.2f})")
+            if score > global_best_score:
+                global_best_score = score
+                global_best_config = dict(full_config)
+                global_best_config["fitness_score"] = round(score, 2)
+                global_best_config.update(eval_res)
+                save_best_params(global_best_config, params_path)
 
-    # --- STAGE 2: Coupled Gradient Descent Dynamics ---
-    print(f"\n>>> [STAGE 2/3] Optimizing Coupled Gradient Descent Dynamics ({trials_stage2} trials) <<<")
-    pruner = MedianPruner(n_startup_trials=3, n_warmup_steps=timesteps // 4)
-    study_opt = optuna.create_study(
-        direction="maximize",
-        sampler=TPESampler(multivariate=True, group=True, seed=seed + 1),
-        pruner=pruner,
-    )
+            if logger:
+                logger.info(f"[Pass {cycle} - Stage 2] Trial {trial.number} | Score: {score:+.2f} | LR: {opt_config['learning_rate']:.6f}")
+            return score
 
-    def objective_stage2(trial: optuna.Trial) -> float:
-        nonlocal global_best_score, global_best_config
-        opt_config = sample_optimization_dynamics(trial)
-        full_config = {**active_arch, **opt_config, **active_tourn}
+        study_opt.optimize(objective_stage2, n_trials=trials_stage2)
+        best_opt_trial = study_opt.best_trial
+        active_opt["learning_rate"] = best_opt_trial.params["learning_rate"]
+        active_opt["min_lr"] = active_opt["learning_rate"] * best_opt_trial.params["min_lr_ratio"]
+        active_opt["n_restart_cycles"] = best_opt_trial.params["n_restart_cycles"]
+        active_opt["n_steps"] = best_opt_trial.params["n_steps"]
+        active_opt["batch_size"] = best_opt_trial.params["batch_size"]
+        active_opt["n_epochs"] = best_opt_trial.params["n_epochs"]
+        active_opt["gamma"] = best_opt_trial.params["gamma"]
+        active_opt["gae_lambda"] = best_opt_trial.params["gae_lambda"]
+        active_opt["clip_range"] = best_opt_trial.params["clip_range"]
+        active_opt["ent_coef"] = best_opt_trial.params["ent_coef"]
+        active_opt["vf_coef"] = best_opt_trial.params["vf_coef"]
+        active_opt["max_grad_norm"] = best_opt_trial.params["max_grad_norm"]
+        print(f"  >>> Stage 2 Complete! Active Optimizer: LR={active_opt['learning_rate']:.6f}, Ent={active_opt['ent_coef']:.5f} (Cycle Best: {study_opt.best_value:+.2f})")
 
-        score, eval_res = run_single_trial(
-            config=full_config,
-            trial=trial,
-            timesteps=timesteps,
-            n_envs=n_envs,
-            eval_sessions=eval_sessions,
-            seed=seed + 100,
-            league_pool=league_pool,
-        )
+        # --- STAGE 3: Tournament & Reward Shaping Dynamics ---
+        print(f"\n>>> [PASS {cycle} - STAGE 3/3] Fine-Tuning Tournament Dynamics ({trials_stage3} trials) <<<")
+        study_tourn = optuna.create_study(direction="maximize", sampler=TPESampler(seed=seed + cycle * 100 + 2))
 
-        if score > global_best_score:
-            global_best_score = score
-            global_best_config = dict(full_config)
-            global_best_config["fitness_score"] = round(score, 2)
-            global_best_config.update(eval_res)
-            save_best_params(global_best_config, params_path)
+        def objective_stage3(trial: optuna.Trial) -> float:
+            nonlocal global_best_score, global_best_config
+            tourn_config = sample_tournament_dynamics(trial)
+            full_config = {**active_arch, **active_opt, **tourn_config}
 
-        if logger:
-            logger.info(f"[Stage 2] Trial {trial.number} | Score: {score:+.2f} | LR: {opt_config['learning_rate']:.6f}")
-        return score
+            score, eval_res = run_single_trial(
+                config=full_config,
+                trial=trial,
+                timesteps=timesteps,
+                n_envs=n_envs,
+                eval_sessions=eval_sessions,
+                seed=seed + cycle * 100 + 200 + trial.number,
+                league_pool=league_pool,
+            )
 
-    study_opt.optimize(objective_stage2, n_trials=trials_stage2)
-    best_opt_trial = study_opt.best_trial
-    active_opt["learning_rate"] = best_opt_trial.params["learning_rate"]
-    active_opt["min_lr"] = active_opt["learning_rate"] * best_opt_trial.params["min_lr_ratio"]
-    active_opt["n_restart_cycles"] = best_opt_trial.params["n_restart_cycles"]
-    active_opt["n_steps"] = best_opt_trial.params["n_steps"]
-    active_opt["batch_size"] = best_opt_trial.params["batch_size"]
-    active_opt["n_epochs"] = best_opt_trial.params["n_epochs"]
-    active_opt["gamma"] = best_opt_trial.params["gamma"]
-    active_opt["gae_lambda"] = best_opt_trial.params["gae_lambda"]
-    active_opt["clip_range"] = best_opt_trial.params["clip_range"]
-    active_opt["ent_coef"] = best_opt_trial.params["ent_coef"]
-    active_opt["vf_coef"] = best_opt_trial.params["vf_coef"]
-    active_opt["max_grad_norm"] = best_opt_trial.params["max_grad_norm"]
-    print(f"  >>> Stage 2 Complete! Best Optimizer: LR={active_opt['learning_rate']:.6f}, Ent={active_opt['ent_coef']:.5f}")
+            if score > global_best_score:
+                global_best_score = score
+                global_best_config = dict(full_config)
+                global_best_config["fitness_score"] = round(score, 2)
+                global_best_config.update(eval_res)
+                save_best_params(global_best_config, params_path)
 
-    # --- STAGE 3: Tournament & Reward Shaping Dynamics ---
-    print(f"\n>>> [STAGE 3/3] Fine-Tuning Tournament Dynamics ({trials_stage3} trials) <<<")
-    study_tourn = optuna.create_study(direction="maximize", sampler=TPESampler(seed=seed + 2))
+            if logger:
+                logger.info(f"[Pass {cycle} - Stage 3] Trial {trial.number} | Score: {score:+.2f} | FoldPenalty: {tourn_config['fold_penalty']:.2f}")
+            return score
 
-    def objective_stage3(trial: optuna.Trial) -> float:
-        nonlocal global_best_score, global_best_config
-        tourn_config = sample_tournament_dynamics(trial)
-        full_config = {**active_arch, **active_opt, **tourn_config}
-
-        score, eval_res = run_single_trial(
-            config=full_config,
-            trial=trial,
-            timesteps=timesteps,
-            n_envs=n_envs,
-            eval_sessions=eval_sessions,
-            seed=seed + 200,
-            league_pool=league_pool,
-        )
-
-        if score > global_best_score:
-            global_best_score = score
-            global_best_config = dict(full_config)
-            global_best_config["fitness_score"] = round(score, 2)
-            global_best_config.update(eval_res)
-            save_best_params(global_best_config, params_path)
-
-        if logger:
-            logger.info(f"[Stage 3] Trial {trial.number} | Score: {score:+.2f} | FoldPenalty: {tourn_config['fold_penalty']:.2f}")
-        return score
-
-    study_tourn.optimize(objective_stage3, n_trials=trials_stage3)
-    best_tourn_trial = study_tourn.best_trial
-    active_tourn["fold_penalty"] = best_tourn_trial.params["fold_penalty"]
-    active_tourn["blind_escalation"] = best_tourn_trial.params["blind_escalation"]
+        study_tourn.optimize(objective_stage3, n_trials=trials_stage3)
+        best_tourn_trial = study_tourn.best_trial
+        active_tourn["fold_penalty"] = best_tourn_trial.params["fold_penalty"]
+        active_tourn["blind_escalation"] = best_tourn_trial.params["blind_escalation"]
+        print(f"  >>> Stage 3 Complete! Active Tournament: Fold={active_tourn['fold_penalty']:.3f}, Blinds={active_tourn['blind_escalation']} (Cycle Best: {study_tourn.best_value:+.2f})")
 
     # Final Save
     final_config = {**active_arch, **active_opt, **active_tourn}
@@ -736,9 +818,10 @@ def run_staged_hpo(
     save_best_params(final_config, params_path)
 
     print("\n============================================================")
-    print("  STAGED HPO COMPLETED SUCCESSFULLY!")
+    print("  STAGED ITERATIVE HPO COMPLETED SUCCESSFULLY!")
+    print(f"  Cycles Completed: {n_cycles}")
     print(f"  Winning Overall Fitness Score: {global_best_score:+.2f}")
-    print(f"  Configuration Saved to: {params_path}")
+    print(f"  Champion Configuration Saved to: {params_path}")
     print("============================================================\n")
 
 
@@ -770,7 +853,8 @@ def run_joint_hpo(
         neural_opponent_prob=0.50,
     )
 
-    pruner = MedianPruner(n_startup_trials=4, n_warmup_steps=timesteps // 4)
+    # In Optuna (maximize): percentile=75.0 keeps the top 75% of trials and only prunes the bottom 25% disasters
+    pruner = PercentilePruner(percentile=75.0, n_startup_trials=4, n_warmup_steps=max(1000, timesteps // 2))
     sampler = TPESampler(multivariate=True, group=True, seed=seed)
     study = optuna.create_study(direction="maximize", sampler=sampler, pruner=pruner)
 
@@ -847,19 +931,21 @@ def analyze_screening_results(
         print("  [Warning] No trials completed successfully. Defaulting to standard bounds.")
         default_bounds = {
             "embed_dim_choices": [32, 64],
-            "pooling_choices": ["mean", "max", "attention", "both"],
+            "pooling_choices": ["both", "attention", "mean"],
             "card_features_dim_choices": [32, 64],
+            "slot_features_dim_choices": [12, 16, 24],
             "n_layers_choices": [3, 4],
-            "lr_min": 1.8e-4,
-            "lr_max": 3.8e-4,
+            "lr_min": 1.0e-4,
+            "lr_max": 3.5e-4,
             "batch_size_choices": [64, 128],
             "n_steps_choices": [1024, 1536],
-            "clip_range_min": 0.16,
-            "clip_range_max": 0.24,
-            "ent_coef_min": 0.005,
+            "clip_range_min": 0.18,
+            "clip_range_max": 0.25,
+            "ent_coef_min": 0.003,
             "ent_coef_max": 0.012,
-            "fold_penalty_min": 0.16,
-            "fold_penalty_max": 0.32,
+            "fold_penalty_min": 0.05,
+            "fold_penalty_max": 0.15,
+            "blind_escalation_choices": [14, 15, 16],
         }
         os.makedirs(os.path.dirname(bounds_path), exist_ok=True)
         with open(bounds_path, "w", encoding="utf-8") as f:
@@ -1223,12 +1309,18 @@ if __name__ == "__main__":
                         choices=["staged", "joint", "decoupled", "brute-force", "screen", "coarse", "screening"],
                         default="staged",
                         help="Search mode: 'screen'/'coarse' (preliminary bad-pick elimination), 'staged'/'decoupled' (factorized subspaces), or 'joint'/'brute-force' (all parameters at once)")
-    parser.add_argument("--n-trials", type=int, default=None, help="Total optimization trials (defaults to 15 for screen, 24 for staged, 30 for joint)")
+    parser.add_argument("--n-trials", type=int, default=None, help="Optimization trials per pass (defaults to 15 for screen, 20 for staged, 30 for joint)")
     parser.add_argument("--timesteps", type=int, default=None, help="Timesteps per trial (defaults to 25,000 for screen, 100,000 for staged/joint)")
     parser.add_argument("--n-envs", type=int, default=None, help="Parallel CPU environments (defaults to 8 for screen, 16 for staged/joint)")
     parser.add_argument("--eval-sessions", type=int, default=None, help="Tournament evaluation sessions per trial")
+    parser.add_argument("--cycles", "--passes", dest="cycles", type=int, default=2,
+                        help="Number of block coordinate descent passes/cycles for staged search (default: 2)")
+    parser.add_argument("--start-cycle", "--start-pass", dest="start_cycle", type=int, default=1,
+                        help="Starting pass index for staged search (default: 1; set to 2 to resume at Pass 2)")
+    parser.add_argument("--resume", action="store_true",
+                        help="Resume from existing parameters in params-path (configs/best_params_d.json)")
     parser.add_argument("--params-path", type=str, default="configs/best_params_d.json")
-    parser.add_argument("--smoke-test", action="store_true", help="Quick 2-trial validation run")
+    parser.add_argument("--smoke-test", action="store_true", help="Quick validation run")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
@@ -1257,10 +1349,13 @@ if __name__ == "__main__":
             logger=logger,
         )
     elif mode in ("staged", "decoupled"):
-        n_trials = args.n_trials if args.n_trials is not None else 24
+        n_trials = args.n_trials if args.n_trials is not None else 20
         timesteps = args.timesteps if args.timesteps is not None else 100_000
         n_envs = args.n_envs if args.n_envs is not None else 16
         eval_sessions = args.eval_sessions if args.eval_sessions is not None else 35
+        n_cycles = 1 if args.smoke_test else args.cycles
+        start_cycle = 1 if args.smoke_test else args.start_cycle
+        resume = False if args.smoke_test else args.resume
         if args.smoke_test:
             print("\n*** RUNNING MODEL D HPO SMOKE TEST (2 trials, 1,000 steps) ***\n")
             n_trials = 2
@@ -1274,6 +1369,9 @@ if __name__ == "__main__":
             eval_sessions=eval_sessions,
             seed=args.seed,
             params_path=args.params_path,
+            n_cycles=n_cycles,
+            start_cycle=start_cycle,
+            resume=resume,
             logger=logger,
         )
     else:

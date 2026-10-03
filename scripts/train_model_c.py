@@ -97,30 +97,37 @@ class SuperhumanSessionCallback(BaseCallback):
     def _on_step(self) -> bool:
         infos = self.locals.get("infos", [])
         dones = self.locals.get("dones", [])
+        rewards = self.locals.get("rewards")
+
+        if not hasattr(self, "env_returns") or len(self.env_returns) != len(dones):
+            self.env_returns = np.zeros(len(dones), dtype=np.float32)
+
+        if rewards is not None:
+            self.env_returns += rewards
 
         for i, done in enumerate(dones):
-            if done and i < len(infos):
-                info = infos[i]
-                hero_chips = info.get("hero_chips", 0)
-                hands = info.get("hands_played", 1)
-                is_winner = 1 if info.get("is_winner", False) else 0
+            if done:
+                self.session_returns.append(float(self.env_returns[i]))
+                self.env_returns[i] = 0.0
+                if len(self.session_returns) > self.window:
+                    self.session_returns.pop(0)
 
-                self.total_sessions += 1
-                survived = 1 if hero_chips > 0 else 0
-                self.survived_history.append(survived)
-                self.winner_history.append(is_winner)
-                self.hands_history.append(hands)
+                if i < len(infos):
+                    info = infos[i]
+                    hero_chips = info.get("hero_chips", 0)
+                    hands = info.get("hands_played", 1)
+                    is_winner = 1 if info.get("is_winner", False) else 0
 
-                if len(self.survived_history) > self.window:
-                    self.survived_history.pop(0)
-                    self.winner_history.pop(0)
-                    self.hands_history.pop(0)
+                    self.total_sessions += 1
+                    survived = 1 if hero_chips > 0 else 0
+                    self.survived_history.append(survived)
+                    self.winner_history.append(is_winner)
+                    self.hands_history.append(hands)
 
-                ep_info = info.get("episode")
-                if ep_info:
-                    self.session_returns.append(ep_info["r"])
-                    if len(self.session_returns) > self.window:
-                        self.session_returns.pop(0)
+                    if len(self.survived_history) > self.window:
+                        self.survived_history.pop(0)
+                        self.winner_history.pop(0)
+                        self.hands_history.pop(0)
 
         if self.num_timesteps % self.log_freq == 0 and len(self.survived_history) > 0:
             rolling_survival = np.mean(self.survived_history) * 100.0

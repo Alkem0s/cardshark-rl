@@ -4,21 +4,25 @@
     64
   ],
   "pooling_choices": [
-    "mean",
-    "max",
+    "both",
     "attention",
-    "both"
+    "mean"
   ],
   "card_features_dim_choices": [
     32,
     64
   ],
+  "slot_features_dim_choices": [
+    12,
+    16,
+    24
+  ],
   "n_layers_choices": [
     3,
     4
   ],
-  "lr_min": 0.00012,
-  "lr_max": 0.00042,
+  "lr_min": 0.0001,
+  "lr_max": 0.00035,
   "batch_size_choices": [
     64,
     128
@@ -27,10 +31,15 @@
     1024,
     1536
   ],
-  "clip_range_min": 0.197,
+  "clip_range_min": 0.18,
   "clip_range_max": 0.25,
-  "ent_coef_min": 0.004,
-  "ent_coef_max": 0.015,
-  "fold_penalty_min": 0.14,
-  "fold_penalty_max": 0.33
+  "ent_coef_min": 0.003,
+  "ent_coef_max": 0.012,
+  "fold_penalty_min": 0.05,
+  "fold_penalty_max": 0.15,
+  "blind_escalation_choices": [
+    14,
+    15,
+    16
+  ]
 }

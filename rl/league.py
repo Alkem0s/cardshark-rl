@@ -110,10 +110,11 @@ class LeaguePool:
         self,
         base_model_path: str = "models/model_b.zip",
         league_dir: str = "models/league",
-        neural_opponent_prob: float = 0.65,
-        min_neural_prob: float = 0.35,
+        neural_opponent_prob: float = 0.50,
+        min_neural_prob: float = 0.30,
         curriculum_warmup_steps: int = 250_000,
         self_play_prob: float = 0.50,
+        exploiter_prob: float = 0.20,
         exclude_prefix: Optional[str] = None,
     ):
         self.base_model_path = base_model_path
@@ -122,6 +123,7 @@ class LeaguePool:
         self.min_neural_prob = min_neural_prob
         self.curriculum_warmup_steps = curriculum_warmup_steps
         self.self_play_prob = self_play_prob
+        self.exploiter_prob = exploiter_prob
         self.exclude_prefix = exclude_prefix
 
         self.historical_checkpoints: List[str] = []
@@ -180,11 +182,24 @@ class LeaguePool:
         seat_idx: int = 0,
         rng: Optional[np.random.Generator] = None,
     ) -> MultiPlayerOpponent:
-        """Samples either a neural LeagueOpponent or a heuristic archetype with curriculum and PFSP weighting."""
+        """
+        Samples an opponent from the mixed ecosystem:
+        1. Dedicated Adversarial Exploiter sparring (exploiter_prob, e.g. 20%) to prevent over-folding.
+        2. Neural LeagueOpponent (PFSP active self-play or historical champions).
+        3. Diverse heuristic archetypes (CallingStation, TAG, LAG, Maniac, Rock).
+        """
         r = rng or np.random.default_rng()
-        prob = self.neural_opponent_prob
+        roll = r.random()
 
-        if self.checkpoints and r.random() < prob:
+        # Dedicated exploiter sparring seat
+        if self.exploiter_prob > 0 and roll < self.exploiter_prob:
+            from game.multi_opponents import AdversarialExploiter
+            return AdversarialExploiter(rng=r)
+
+        prob = self.neural_opponent_prob
+        rem_roll = (roll - self.exploiter_prob) / max(1e-6, 1.0 - self.exploiter_prob)
+
+        if self.checkpoints and rem_roll < prob:
             # Decide between Active Self-Play vs Historical Anchor Pool
             if self.active_snapshots and r.random() < self.self_play_prob:
                 # Recency-weighted sampling favoring recent self-play checkpoints

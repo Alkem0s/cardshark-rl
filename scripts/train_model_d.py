@@ -155,30 +155,37 @@ class ModelDSessionCallback(BaseCallback):
     def _on_step(self) -> bool:
         infos = self.locals.get("infos", [])
         dones = self.locals.get("dones", [])
+        rewards = self.locals.get("rewards")
+
+        if not hasattr(self, "env_returns") or len(self.env_returns) != len(dones):
+            self.env_returns = np.zeros(len(dones), dtype=np.float32)
+
+        if rewards is not None:
+            self.env_returns += rewards
 
         for i, done in enumerate(dones):
-            if done and i < len(infos):
-                info = infos[i]
-                hero_chips = info.get("hero_chips", 0)
-                hands = info.get("hands_played", 1)
-                is_winner = 1 if info.get("is_winner", False) else 0
+            if done:
+                self.session_returns.append(float(self.env_returns[i]))
+                self.env_returns[i] = 0.0
+                if len(self.session_returns) > self.window:
+                    self.session_returns.pop(0)
 
-                self.total_sessions += 1
-                survived = 1 if hero_chips > 0 else 0
-                self.survived_history.append(survived)
-                self.winner_history.append(is_winner)
-                self.hands_history.append(hands)
+                if i < len(infos):
+                    info = infos[i]
+                    hero_chips = info.get("hero_chips", 0)
+                    hands = info.get("hands_played", 1)
+                    is_winner = 1 if info.get("is_winner", False) else 0
 
-                if len(self.survived_history) > self.window:
-                    self.survived_history.pop(0)
-                    self.winner_history.pop(0)
-                    self.hands_history.pop(0)
+                    self.total_sessions += 1
+                    survived = 1 if hero_chips > 0 else 0
+                    self.survived_history.append(survived)
+                    self.winner_history.append(is_winner)
+                    self.hands_history.append(hands)
 
-                ep_info = info.get("episode")
-                if ep_info:
-                    self.session_returns.append(ep_info["r"])
-                    if len(self.session_returns) > self.window:
-                        self.session_returns.pop(0)
+                    if len(self.survived_history) > self.window:
+                        self.survived_history.pop(0)
+                        self.winner_history.pop(0)
+                        self.hands_history.pop(0)
 
         if self.num_timesteps % self.log_freq == 0 and len(self.survived_history) > 0:
             rolling_survival = np.mean(self.survived_history) * 100.0
@@ -297,6 +304,7 @@ def train(
     pooling: str = "mean",
     card_features_dim: int = 32,
     game_features_dim: int = 64,
+    slot_features_dim: int = 16,
 ):
     os.makedirs(save_dir, exist_ok=True)
     os.makedirs(league_dir, exist_ok=True)
@@ -311,7 +319,7 @@ def train(
     ent_coef = 0.00764
     vf_coef = 0.5316
     max_grad_norm = 0.5723
-    fold_penalty = 0.215
+    fold_penalty = 0.15
     net_arch = [256, 256, 256]
 
     # Load custom tuned parameters if available
@@ -348,6 +356,7 @@ def train(
             num_heads = params.get("num_heads", num_heads)
             pooling = params.get("pooling", pooling)
             card_features_dim = params.get("card_features_dim", card_features_dim)
+            slot_features_dim = params.get("slot_features_dim", slot_features_dim)
             game_features_dim = params.get("game_features_dim", game_features_dim)
             if n_steps is None:
                 n_steps = params.get("n_steps", 1536)
@@ -375,14 +384,15 @@ def train(
                 except OSError:
                     pass
 
-    # Multi-Agent League Pool (PFSP with Dynamic Curriculum Warmup)
+    # Multi-Agent League Pool (PFSP with Dynamic Curriculum Warmup + Exploiter Defense)
     league_pool = LeaguePool(
         base_model_path="models/model_b.zip",
         league_dir=league_dir,
-        neural_opponent_prob=0.65,
-        min_neural_prob=0.35,
+        neural_opponent_prob=0.50,
+        min_neural_prob=0.30,
         curriculum_warmup_steps=250_000 if not smoke_test else 250,
         self_play_prob=0.50,
+        exploiter_prob=0.20,
         exclude_prefix="model_d_step_" if (resume_path is None and not preserve_league) else None,
     )
 
@@ -398,11 +408,11 @@ def train(
         effective_n_steps = n_steps
         total_rollout = effective_n_steps * n_envs
         print(f"=== STARTING MODEL D CHAMPION TRAINING ({timesteps:,} steps) ===")
-        print(f"  Architecture: CardAttentionExtractor (dim={embed_dim}, heads={num_heads}, pool={pooling}) + MLP {net_arch}")
+        print(f"  Architecture: CardAttentionExtractor (dim={embed_dim}, heads={num_heads}, pool={pooling}, slots={slot_features_dim}x5) + MLP {net_arch}")
         print(f"  Observation: {SUPERHUMAN_OBS_DIM} dims (10 Card tokens + 77 Table/Tracker/Sequence state)")
         print(f"  LR Dynamics: Cosine Annealing with {n_restart_cycles} Warm Restarts (peak={learning_rate:.6f}, min={min_lr:.6f})")
         print(f"  Environments: {n_envs} | Steps/Env: {effective_n_steps} | Rollout Buffer: {total_rollout:,} steps")
-        print(f"  Curriculum Sparring: Neural density ramps 35% -> 65% over 250k steps | 50% Recency-Weighted Self-Play")
+        print(f"  Curriculum Sparring: Neural ramps 30% -> 50% | 20% Adversarial Exploiter Sparring | 50% Recency Self-Play")
         print(f"  League Sparring Pool: {len(league_pool.checkpoints)} baseline checkpoints (1st snapshot at 125,000 steps, then every {snapshot_interval:,} steps)")
 
     # Vectorized Environment
@@ -428,6 +438,7 @@ def train(
             pooling=pooling,
             card_features_dim=card_features_dim,
             game_features_dim=game_features_dim,
+            slot_features_dim=slot_features_dim,
         ),
         net_arch=dict(pi=net_arch, vf=net_arch),
     )

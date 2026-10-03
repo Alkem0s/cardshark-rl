@@ -40,6 +40,7 @@ def test_card_attention_extractor_shapes():
             pooling=pooling,
             card_features_dim=32,
             game_features_dim=64,
+            slot_features_dim=16,
         )
         extractor.eval()
 
@@ -48,16 +49,19 @@ def test_card_attention_extractor_shapes():
         with torch.no_grad():
             out = extractor(dummy_obs)
 
-        expected_dim = 32 + 64 # 96
+        # 32 (global) + 5 * 16 (slots) + 64 (game) = 176
+        expected_dim = 32 + (5 * 16) + 64
         assert out.shape == (batch_size, expected_dim), f"Shape mismatch: {out.shape} vs {(batch_size, expected_dim)}"
 
-    print("test_card_attention_extractor_shapes: PASS (All pooling modes produced shape (B, 96))")
+    print("test_card_attention_extractor_shapes: PASS (All pooling modes produced shape (B, 176))")
 
 
-def test_permutation_invariance():
+def test_permutation_invariance_and_slot_equivariance():
     """
     MATHEMATICAL PROOF TEST:
-    Verifies that permuting the 5 private cards produces an IDENTICAL feature representation.
+    1. Verifies that global pooled hand representation is strictly PERMUTATION-INVARIANT.
+    2. Verifies that slot-level representations are strictly PERMUTATION-EQUIVARIANT (swapping slot i and j
+       swaps their respective embeddings, enabling accurate discard decisions).
     """
     obs_space = spaces.Box(low=-1.0, high=1.0, shape=(SUPERHUMAN_OBS_DIM,), dtype=np.float32)
 
@@ -69,27 +73,28 @@ def test_permutation_invariance():
             pooling=pooling,
             card_features_dim=32,
             game_features_dim=64,
+            slot_features_dim=16,
         )
         extractor.eval()
 
-        # Create a single observation with distinct cards
         torch.manual_seed(42)
         base_obs = torch.randn(1, SUPERHUMAN_OBS_DIM)
 
-        # Separate 5 cards (each 2 features: rank, suit)
         cards = [base_obs[0, 2 * i : 2 * i + 2] for i in range(5)]
         game_state = base_obs[0, 10:]
 
-        # Original representation
         with torch.no_grad():
             orig_out = extractor(base_obs)
+            orig_card_raw, _ = extractor.extract_cards_and_game(base_obs)
+            orig_tokens = extractor.forward_card_tokens(orig_card_raw)
+            orig_global = extractor.pool_hand(orig_tokens)
 
-        # Test permutations: reverse, cyclic shift, random shuffle
+        # Test permutations
         test_perms = [
-            [4, 3, 2, 1, 0], # Reverse
-            [1, 2, 3, 4, 0], # Cyclic shift
-            [3, 0, 4, 1, 2], # Arbitrary permutation
-            [2, 4, 1, 0, 3], # Another permutation
+            [4, 3, 2, 1, 0],
+            [1, 2, 3, 4, 0],
+            [3, 0, 4, 1, 2],
+            [2, 4, 1, 0, 3],
         ]
 
         for p in test_perms:
@@ -97,13 +102,20 @@ def test_permutation_invariance():
             permuted_obs = torch.cat([permuted_cards, game_state], dim=0).unsqueeze(0)
 
             with torch.no_grad():
-                perm_out = extractor(permuted_obs)
+                perm_card_raw, _ = extractor.extract_cards_and_game(permuted_obs)
+                perm_tokens = extractor.forward_card_tokens(perm_card_raw)
+                perm_global = extractor.pool_hand(perm_tokens)
 
-            # Max absolute difference across feature dimensions
-            max_diff = torch.max(torch.abs(orig_out - perm_out)).item()
-            assert max_diff < 1e-5, f"Permutation invariance failed for pooling={pooling}: max_diff={max_diff}"
+            # 1. Global representation must be invariant
+            global_diff = torch.max(torch.abs(orig_global - perm_global)).item()
+            assert global_diff < 1e-5, f"Global pooling invariance failed for pooling={pooling}: diff={global_diff}"
 
-    print("test_permutation_invariance: PASS (Verified strictly invariant across S_5 card permutations, max_diff < 1e-5)")
+            # 2. Token representation must be equivariant: token at permuted slot k must equal original token at p[k]
+            for slot_k, orig_idx in enumerate(p):
+                token_diff = torch.max(torch.abs(perm_tokens[0, slot_k] - orig_tokens[0, orig_idx])).item()
+                assert token_diff < 1e-5, f"Slot equivariance failed for slot {slot_k} (orig {orig_idx}): diff={token_diff}"
+
+    print("test_permutation_invariance_and_slot_equivariance: PASS (Verified global invariance & slot equivariance across S_5)")
 
 
 def test_gradient_flow():
@@ -254,7 +266,7 @@ if __name__ == "__main__":
     print("============================================================\n")
 
     test_card_attention_extractor_shapes()
-    test_permutation_invariance()
+    test_permutation_invariance_and_slot_equivariance()
     test_gradient_flow()
     test_cosine_warm_restart_schedule()
     test_adversarial_exploiter()
