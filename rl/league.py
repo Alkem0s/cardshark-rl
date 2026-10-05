@@ -26,7 +26,7 @@ def get_cached_model(model_path: str):
 
 
 class LeagueOpponent(MultiPlayerOpponent):
-    """Neural network opponent loaded from a frozen checkpoint (Model B, C, or D snapshot)."""
+    """Neural network opponent loaded from a frozen checkpoint (Model B, C, D, or E snapshot)."""
 
     def __init__(
         self,
@@ -41,9 +41,29 @@ class LeagueOpponent(MultiPlayerOpponent):
         self.model_path = model_path
         self.deterministic = deterministic
         self.model = get_cached_model(model_path)
-        self.is_superhuman = (self.model.observation_space.shape[0] == 87)
+        self.obs_dim = int(self.model.observation_space.shape[0])
+        # Backwards compatibility flag for legacy tests
+        self.is_superhuman = (self.obs_dim in (87, 91, 97))
+        # Discard masking is enabled for Model E and newer
+        self.discard_masking = (self.obs_dim >= 91)
         self.tracker = TableOpponentTracker(num_seats=5)
         self._fallback_bot = TAG(rng=self.rng)
+
+    def get_action_mask(self, env, seat_idx: int) -> np.ndarray:
+        """Returns action mask for seat, applying dominated discard action masking if supported."""
+        from game.multi_draw_poker_env import PHASE_DRAW, TOTAL_ACTIONS, A_DRAW_START
+        if self.discard_masking and env.phase == PHASE_DRAW:
+            from rl.discard_masker import get_legal_discard_mask
+            hand = env.seats[seat_idx].hand
+            discard_mask = get_legal_discard_mask(hand)
+            mask = np.zeros(TOTAL_ACTIONS, dtype=np.int8)
+            for bitmask_idx in range(len(discard_mask)):
+                if discard_mask[bitmask_idx]:
+                    mask[A_DRAW_START + bitmask_idx] = 1
+            if not np.any(mask):
+                mask[A_DRAW_START] = 1
+            return mask
+        return env.get_action_mask(seat_idx)
 
     def act_with_env(self, env, seat_idx: int, legal_actions: List[int]) -> int:
         from rl.multi_gym_wrapper import build_observation_vector
@@ -52,9 +72,9 @@ class LeagueOpponent(MultiPlayerOpponent):
                 env=env,
                 tracker=self.tracker,
                 seat_idx=seat_idx,
-                superhuman_obs=self.is_superhuman,
+                obs_dim=self.obs_dim,
             )
-            mask = env.get_action_mask(seat_idx)
+            mask = self.get_action_mask(env, seat_idx)
             action_id, _ = self.model.predict(obs, action_masks=mask, deterministic=self.deterministic)
             action_id = int(action_id)
             if action_id in legal_actions:
@@ -150,11 +170,12 @@ class LeaguePool:
         """Scans the filesystem for valid model checkpoints."""
         self.historical_checkpoints = []
 
-        # Seed base models (Model B baseline and Model C superhuman predecessor)
+        # Seed base models (Model B baseline, Model C superhuman, Model D attention champion)
         for candidate in [
             self.base_model_path,
             "models/model_b.zip",
             "models/model_c.zip",
+            "models/model_d.zip",
         ]:
             if os.path.exists(candidate) and candidate not in self.historical_checkpoints:
                 self.historical_checkpoints.append(candidate)

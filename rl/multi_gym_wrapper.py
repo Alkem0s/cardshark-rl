@@ -41,8 +41,27 @@ except ImportError:
     from multi_opponents import MultiPlayerOpponent, make_random_archetype, make_opponent_by_id
     from opponent_tracker import TableOpponentTracker
 
-OBS_DIM = 63
-SUPERHUMAN_OBS_DIM = 87
+from enum import IntEnum
+
+class ModelObsDim(IntEnum):
+    """Standardized observation dimensions keyed by model version designation."""
+    MODEL_B = 63  # Baseline tabular/MLP representation
+    MODEL_C = 87  # Model C sequence/action history representation
+    MODEL_D = 87  # Model D attention representation (same feature schema as C)
+    MODEL_E = 91  # Model E ICM & tournament blind dynamics representation
+    MODEL_F = 97  # Model F bluff & range asymmetry representation (future)
+
+# Global canonical dimension constants
+OBS_DIM_B = ModelObsDim.MODEL_B.value
+OBS_DIM_C = ModelObsDim.MODEL_C.value
+OBS_DIM_D = ModelObsDim.MODEL_D.value
+OBS_DIM_E = ModelObsDim.MODEL_E.value
+OBS_DIM_F = ModelObsDim.MODEL_F.value
+
+# Backward-compatibility aliases
+OBS_DIM = OBS_DIM_B
+SUPERHUMAN_OBS_DIM = OBS_DIM_C
+MODEL_E_OBS_DIM = OBS_DIM_E
 
 
 class MultiDrawPokerGymEnv(gym.Env):
@@ -56,14 +75,17 @@ class MultiDrawPokerGymEnv(gym.Env):
         starting_chips: int = 200,
         small_blind: int = 1,
         big_blind: int = 2,
-        hero_seat: Optional[int] = None, # None = randomized per session
+        hero_seat: Optional[int] = None,  # None = randomized per session
         max_hands_per_session: int = 150,
         blind_escalation_interval: Optional[int] = None,
         randomize_stacks: bool = False,
         fold_penalty: float = 0.2,
         rng_seed: Optional[int] = None,
         fixed_opponent_archetypes: Optional[List[int]] = None,
-        superhuman_obs: bool = False,
+        obs_dim: int | ModelObsDim = ModelObsDim.MODEL_B,
+        superhuman_obs: Optional[bool] = None,
+        model_e_obs: Optional[bool] = None,
+        discard_masking: bool = False,
         league_pool: Optional[Any] = None,
     ):
         super().__init__()
@@ -79,7 +101,19 @@ class MultiDrawPokerGymEnv(gym.Env):
         self.randomize_stacks = randomize_stacks
         self.fold_penalty = fold_penalty
         self.fixed_opponent_archetypes = fixed_opponent_archetypes
-        self.superhuman_obs = superhuman_obs
+
+        # Standardized observation dimension resolution
+        if model_e_obs is True:
+            self.obs_dim = int(ModelObsDim.MODEL_E)
+        elif superhuman_obs is True:
+            self.obs_dim = int(ModelObsDim.MODEL_C)
+        else:
+            self.obs_dim = int(obs_dim)
+
+        # Retain backward-compatible attributes for external callers
+        self.superhuman_obs = (self.obs_dim >= ModelObsDim.MODEL_C.value)
+        self.model_e_obs = (self.obs_dim >= ModelObsDim.MODEL_E.value)
+        self.discard_masking = discard_masking
         self.league_pool = league_pool
 
         self.rng = np.random.default_rng(rng_seed)
@@ -102,9 +136,8 @@ class MultiDrawPokerGymEnv(gym.Env):
         self.opponents: Dict[int, MultiPlayerOpponent] = {}
 
         # Observation & action spaces
-        obs_dim = SUPERHUMAN_OBS_DIM if superhuman_obs else OBS_DIM
         self.observation_space = spaces.Box(
-            low=-1.0, high=1.0, shape=(obs_dim,), dtype=np.float32
+            low=-1.0, high=1.0, shape=(self.obs_dim,), dtype=np.float32
         )
         self.action_space = spaces.Discrete(TOTAL_ACTIONS)
 
@@ -122,6 +155,17 @@ class MultiDrawPokerGymEnv(gym.Env):
         if self.env.session_done or not self.env.seats[self.hero_seat].is_alive:
             mask = np.zeros(TOTAL_ACTIONS, dtype=np.int8)
             mask[A_CALL] = 1 # Fallback
+            return mask
+        if self.discard_masking and self.env.phase == PHASE_DRAW:
+            from rl.discard_masker import get_legal_discard_mask
+            hero_hand = self.env.seats[self.hero_seat].hand
+            discard_mask = get_legal_discard_mask(hero_hand)
+            mask = np.zeros(TOTAL_ACTIONS, dtype=np.int8)
+            for bitmask_idx in range(len(discard_mask)):
+                if discard_mask[bitmask_idx]:
+                    mask[A_DRAW_START + bitmask_idx] = 1
+            if not np.any(mask):
+                mask[A_DRAW_START] = 1
             return mask
         return self.env.get_action_mask(self.hero_seat)
 
@@ -277,6 +321,61 @@ class MultiDrawPokerGymEnv(gym.Env):
             self._record_hand_to_tracker()
             self._reset_hand_tracking()
 
+    def step_table_until_winner(self):
+        """Continues stepping the tournament among remaining alive bots until only 1 remains or max hands hit."""
+        prev_hand_idx = self.env.hands_played
+
+        while not self.env.session_done and len(self.env.alive_seats) > 1 and self.env.hands_played < self.max_hands_per_session:
+            if self.env.hands_played != prev_hand_idx:
+                self._record_hand_to_tracker()
+                self._reset_hand_tracking()
+                prev_hand_idx = self.env.hands_played
+
+            opp_seat = self.env.current_seat
+            opp_player = self.env.seats[opp_seat]
+
+            if opp_player.is_alive and not opp_player.folded and not opp_player.is_all_in:
+                bot = self.opponents.get(opp_seat)
+                legal = self.env.get_legal_actions(opp_seat)
+
+                if legal:
+                    if self.env.phase in (PHASE_PRE_DRAW, PHASE_POST_DRAW):
+                        if bot:
+                            if hasattr(bot, "act_with_env"):
+                                action = bot.act_with_env(self.env, opp_seat, legal)
+                            else:
+                                action = bot.bet_action(
+                                    hand=opp_player.hand,
+                                    pot=self.env.pot,
+                                    bet_to_call=opp_player.bet_to_call,
+                                    phase=self.env.phase,
+                                    stack=opp_player.chips,
+                                    legal_actions=legal,
+                                )
+                        else:
+                            action = A_CALL if A_CALL in legal else legal[0]
+                    else: # Draw phase
+                        if bot:
+                            if hasattr(bot, "draw_with_env"):
+                                action = bot.draw_with_env(self.env, opp_seat)
+                            else:
+                                discards = bot.draw_action(opp_player.hand)
+                                bitmask = sum((1 << i) for i in discards)
+                                action = A_DRAW_START + bitmask
+                        else:
+                            action = A_DRAW_START
+
+                    self._record_action_telemetry(opp_seat, action)
+                    self.env.step_action(opp_seat, action)
+                else:
+                    self.env.step_action(opp_seat, A_CALL)
+            else:
+                self.env.step_action(opp_seat, A_CALL)
+
+        if self.env.hands_played != prev_hand_idx:
+            self._record_hand_to_tracker()
+            self._reset_hand_tracking()
+
     def _record_action_telemetry(self, seat_idx: int, action: int):
         player = self.env.seats[seat_idx]
         if self.env.phase == PHASE_PRE_DRAW:
@@ -317,11 +416,38 @@ class MultiDrawPokerGymEnv(gym.Env):
             env=self.env,
             tracker=self.tracker,
             seat_idx=self.hero_seat,
-            superhuman_obs=self.superhuman_obs,
+            obs_dim=self.obs_dim,
         )
+
+    def get_privileged_belief(self) -> Tuple[int, float]:
+        """
+        Returns privileged ground-truth table belief for auxiliary representation learning:
+        - target_cat: int (0..8) hand category of primary active opponent
+        - target_bluff: float (0.0 or 1.0) whether primary active opponent is betting with air (cat == 0)
+        """
+        primary_opp = -1
+        max_round_bet = 0
+        for s in range(self.num_seats):
+            if s != self.hero_seat and self.env.seats[s].is_alive and not self.env.seats[s].folded:
+                if self.env.seats[s].round_invested > max_round_bet:
+                    max_round_bet = self.env.seats[s].round_invested
+                    primary_opp = s
+
+        if primary_opp == -1:
+            active = [s for s in range(self.num_seats) if s != self.hero_seat and self.env.seats[s].is_alive and not self.env.seats[s].folded]
+            if active:
+                primary_opp = active[0]
+
+        if primary_opp != -1 and self.env.seats[primary_opp].hand and len(self.env.seats[primary_opp].hand) == 5:
+            cat = int(hand_category(self.env.seats[primary_opp].hand))
+            is_bluff = 1.0 if (cat == 0 and max_round_bet > 0) else 0.0
+            return cat, is_bluff
+
+        return 0, 0.0
 
     def _build_info(self) -> dict:
         is_winner = bool(len(self.env.alive_seats) == 1 and self.env.alive_seats[0] == self.hero_seat)
+        cat, is_bluff = self.get_privileged_belief()
         return {
             "hero_seat": self.hero_seat,
             "hero_chips": self.env.seats[self.hero_seat].chips,
@@ -330,6 +456,8 @@ class MultiDrawPokerGymEnv(gym.Env):
             "alive_players": len(self.env.alive_seats),
             "button_seat": self.env.button_seat,
             "is_winner": is_winner,
+            "opp_hand_cat": cat,
+            "is_bluff": is_bluff,
         }
 
 
@@ -337,9 +465,26 @@ def build_observation_vector(
     env: MultiDrawPokerEnv,
     tracker: TableOpponentTracker,
     seat_idx: int,
-    superhuman_obs: bool = False,
+    obs_dim: int | ModelObsDim = ModelObsDim.MODEL_B,
+    superhuman_obs: Optional[bool] = None,
+    model_e_obs: Optional[bool] = None,
 ) -> np.ndarray:
-    """Constructs scale-invariant state vector (63 dims for Model B, 87 dims for Model C Superhuman)."""
+    """
+    Constructs scale-invariant state vector for the requested model tier:
+    - Model B: 63 dims (Hand tokens, scoring, stack/pot, position, survival, opponent slots)
+    - Model C / D: 87 dims (+ 24 sequence memory & recency tilt features)
+    - Model E: 91 dims (+ 4 tournament ICM dynamics: Stack/BB, Pot/BB, Blind pressure, Clock)
+    """
+    # Standardize target dimension
+    if model_e_obs is True:
+        target_dim = ModelObsDim.MODEL_E.value
+    elif superhuman_obs is True:
+        target_dim = ModelObsDim.MODEL_C.value
+    elif superhuman_obs is False and model_e_obs is False and obs_dim == ModelObsDim.MODEL_B:
+        target_dim = ModelObsDim.MODEL_B.value
+    else:
+        target_dim = int(obs_dim)
+
     hero = env.seats[seat_idx]
     total_chips = max(1.0, float(env.total_table_chips))
     pot = float(env.pot)
@@ -411,11 +556,11 @@ def build_observation_vector(
         opp_vector
     )
 
-    if not superhuman_obs:
-        assert len(obs) == OBS_DIM, f"Observation dimension mismatch: {len(obs)} != {OBS_DIM}"
+    if target_dim == ModelObsDim.MODEL_B.value:
+        assert len(obs) == OBS_DIM_B, f"Model B observation dimension mismatch: {len(obs)} != {OBS_DIM_B}"
         return np.array(obs, dtype=np.float32)
 
-    # 7. Model C Superhuman Sequence & Dynamic Recency Memory (24: 4 slots x 6 features)
+    # 7. Model C/D Action Sequence & Dynamic Recency Memory (24: 4 slots x 6 features)
     act_map = {
         -1: 0.0,
         A_FOLD: -1.0,
@@ -426,7 +571,7 @@ def build_observation_vector(
         A_ALL_IN: 1.0,
     }
 
-    superhuman_features: List[float] = []
+    sequence_features: List[float] = []
     for offset in range(1, env.num_seats):
         s = (seat_idx + offset) % env.num_seats
         p = env.seats[s]
@@ -462,10 +607,88 @@ def build_observation_vector(
         else:
             slot_seq = [0.0] * 6
 
-        superhuman_features.extend(slot_seq)
+        sequence_features.extend(slot_seq)
 
-    obs = obs + superhuman_features
-    assert len(obs) == SUPERHUMAN_OBS_DIM, f"Superhuman observation dimension mismatch: {len(obs)} != {SUPERHUMAN_OBS_DIM}"
+    obs = obs + sequence_features
+
+    if target_dim in (ModelObsDim.MODEL_C.value, ModelObsDim.MODEL_D.value):
+        assert len(obs) == OBS_DIM_C, f"Model C/D observation dimension mismatch: {len(obs)} != {OBS_DIM_C}"
+        return np.array(obs, dtype=np.float32)
+
+    # 8. Model E Tournament ICM Dynamics (4 features)
+    bb = max(1.0, float(env.big_blind))
+    # Effective stack in BB (capped at 100 BB, normalized [-1.0, 1.0])
+    stack_bb_norm = float(np.clip((hero.chips / bb) / 50.0, 0.0, 2.0)) - 1.0
+    # Pot in BB (capped at 50 BB, normalized [-1.0, 1.0])
+    pot_bb_norm = float(np.clip((pot / bb) / 25.0, 0.0, 2.0)) - 1.0
+    # Blind pressure: current BB relative to all table chips
+    bb_pressure_norm = float(np.clip((bb / total_chips) * 10.0, 0.0, 2.0)) - 1.0
+    # Blind escalation clock: countdown to next blind raise
+    if env.blind_escalation_interval and env.blind_escalation_interval > 0:
+        hands_left = env.blind_escalation_interval - (env.hands_played % env.blind_escalation_interval)
+        escalation_clock = (float(hands_left) / float(env.blind_escalation_interval)) * 2.0 - 1.0
+    else:
+        escalation_clock = 0.0
+    icm_features = [stack_bb_norm, pot_bb_norm, bb_pressure_norm, escalation_clock]
+    obs = obs + icm_features
+
+    if target_dim == ModelObsDim.MODEL_E.value:
+        assert len(obs) == OBS_DIM_E, f"Model E observation dimension mismatch: {len(obs)} != {OBS_DIM_E}"
+        return np.array(obs, dtype=np.float32)
+
+    # 9. Model F Game-Theoretic Geometry & Information Features (6 features)
+    pot_odds_raw = btc / max(1.0, pot + btc)
+    pot_odds_norm = float(np.clip(pot_odds_raw * 2.0 - 1.0, -1.0, 1.0))
+
+    mdf_raw = pot / max(1.0, pot + btc)
+    mdf_norm = float(np.clip(mdf_raw * 2.0 - 1.0, -1.0, 1.0))
+
+    # Aggressor tracking: identify opponent who opened or raised
+    aggressor_seat = -1
+    max_invest = 0
+    for s_idx in range(env.num_seats):
+        if s_idx != seat_idx and env.seats[s_idx].is_alive and not env.seats[s_idx].folded:
+            if env.seats[s_idx].round_invested > max_invest:
+                max_invest = env.seats[s_idx].round_invested
+                aggressor_seat = s_idx
+
+    if aggressor_seat != -1 and env.seats[aggressor_seat].draw_count >= 0:
+        aggressor_draw_norm = float(np.clip((env.seats[aggressor_seat].draw_count / 5.0) * 2.0 - 1.0, -1.0, 1.0))
+        pre_bet = max(1.0, float(env.seats[aggressor_seat].pre_draw_bet_size))
+        post_bet = float(env.seats[aggressor_seat].post_draw_bet_size)
+        escalation_norm = float(np.clip((post_bet / pre_bet) - 1.0, -1.0, 1.0))
+    else:
+        aggressor_draw_norm = 0.0
+        escalation_norm = 0.0
+
+    if hero.hand and len(hero.hand) == 5:
+        hand_pctl_norm = float(np.clip((hand_category(hero.hand) / 8.0) * 2.0 - 1.0, -1.0, 1.0))
+    else:
+        hand_pctl_norm = -1.0
+
+    facing_probe = 0.0
+    if env.phase == PHASE_POST_DRAW and btc > 0:
+        if hero.post_draw_action == A_CALL and hero.round_invested == 0:
+            facing_probe = 1.0
+        elif hero.post_draw_action == -1 and env.current_bet > 0:
+            facing_probe = 0.5
+    facing_probe_norm = float(facing_probe * 2.0 - 1.0)
+
+    model_f_features = [
+        pot_odds_norm,
+        mdf_norm,
+        aggressor_draw_norm,
+        escalation_norm,
+        hand_pctl_norm,
+        facing_probe_norm,
+    ]
+    obs = obs + model_f_features
+
+    if target_dim == ModelObsDim.MODEL_F.value:
+        assert len(obs) == OBS_DIM_F, f"Model F observation dimension mismatch: {len(obs)} != {OBS_DIM_F}"
+        return np.array(obs, dtype=np.float32)
+
+    assert len(obs) == target_dim, f"Observation dimension mismatch: {len(obs)} != {target_dim}"
     return np.array(obs, dtype=np.float32)
 
 
@@ -485,7 +708,10 @@ def make_multi_env(
     fold_penalty: float = 0.2,
     seed: int = 0,
     fixed_opponent_archetypes: Optional[List[int]] = None,
-    superhuman_obs: bool = False,
+    obs_dim: int | ModelObsDim = ModelObsDim.MODEL_B,
+    superhuman_obs: Optional[bool] = None,
+    model_e_obs: Optional[bool] = None,
+    discard_masking: bool = False,
     league_pool: Optional[Any] = None,
 ):
     """Creates a closure that returns a MultiDrawPokerGymEnv."""
@@ -502,13 +728,16 @@ def make_multi_env(
             fold_penalty=fold_penalty,
             rng_seed=seed,
             fixed_opponent_archetypes=fixed_opponent_archetypes,
+            obs_dim=obs_dim,
             superhuman_obs=superhuman_obs,
+            model_e_obs=model_e_obs,
+            discard_masking=discard_masking,
             league_pool=league_pool,
         )
     return _init
 
 
-def make_superhuman_multi_env(
+def make_model_b_multi_env(
     num_seats: int = 5,
     starting_chips: int = 200,
     small_blind: int = 1,
@@ -522,7 +751,7 @@ def make_superhuman_multi_env(
     fixed_opponent_archetypes: Optional[List[int]] = None,
     league_pool: Optional[Any] = None,
 ):
-    """Creates a closure that returns a Superhuman MultiDrawPokerGymEnv (87 dims)."""
+    """Creates a closure that returns a Model B MultiDrawPokerGymEnv (63 dims)."""
     return make_multi_env(
         num_seats=num_seats,
         starting_chips=starting_chips,
@@ -535,9 +764,146 @@ def make_superhuman_multi_env(
         fold_penalty=fold_penalty,
         seed=seed,
         fixed_opponent_archetypes=fixed_opponent_archetypes,
-        superhuman_obs=True,
+        obs_dim=ModelObsDim.MODEL_B,
+        discard_masking=False,
         league_pool=league_pool,
     )
+
+
+def make_model_c_multi_env(
+    num_seats: int = 5,
+    starting_chips: int = 200,
+    small_blind: int = 1,
+    big_blind: int = 2,
+    hero_seat: Optional[int] = None,
+    max_hands_per_session: int = 150,
+    blind_escalation_interval: Optional[int] = None,
+    randomize_stacks: bool = False,
+    fold_penalty: float = 0.2,
+    seed: int = 0,
+    fixed_opponent_archetypes: Optional[List[int]] = None,
+    league_pool: Optional[Any] = None,
+):
+    """Creates a closure that returns a Model C MultiDrawPokerGymEnv (87 dims)."""
+    return make_multi_env(
+        num_seats=num_seats,
+        starting_chips=starting_chips,
+        small_blind=small_blind,
+        big_blind=big_blind,
+        hero_seat=hero_seat,
+        max_hands_per_session=max_hands_per_session,
+        blind_escalation_interval=blind_escalation_interval,
+        randomize_stacks=randomize_stacks,
+        fold_penalty=fold_penalty,
+        seed=seed,
+        fixed_opponent_archetypes=fixed_opponent_archetypes,
+        obs_dim=ModelObsDim.MODEL_C,
+        discard_masking=False,
+        league_pool=league_pool,
+    )
+
+
+def make_model_d_multi_env(
+    num_seats: int = 5,
+    starting_chips: int = 200,
+    small_blind: int = 1,
+    big_blind: int = 2,
+    hero_seat: Optional[int] = None,
+    max_hands_per_session: int = 150,
+    blind_escalation_interval: Optional[int] = None,
+    randomize_stacks: bool = False,
+    fold_penalty: float = 0.2,
+    seed: int = 0,
+    fixed_opponent_archetypes: Optional[List[int]] = None,
+    league_pool: Optional[Any] = None,
+):
+    """Creates a closure that returns a Model D MultiDrawPokerGymEnv (87 dims)."""
+    return make_multi_env(
+        num_seats=num_seats,
+        starting_chips=starting_chips,
+        small_blind=small_blind,
+        big_blind=big_blind,
+        hero_seat=hero_seat,
+        max_hands_per_session=max_hands_per_session,
+        blind_escalation_interval=blind_escalation_interval,
+        randomize_stacks=randomize_stacks,
+        fold_penalty=fold_penalty,
+        seed=seed,
+        fixed_opponent_archetypes=fixed_opponent_archetypes,
+        obs_dim=ModelObsDim.MODEL_D,
+        discard_masking=False,
+        league_pool=league_pool,
+    )
+
+
+def make_model_e_multi_env(
+    num_seats: int = 5,
+    starting_chips: int = 200,
+    small_blind: int = 1,
+    big_blind: int = 2,
+    hero_seat: Optional[int] = None,
+    max_hands_per_session: int = 150,
+    blind_escalation_interval: Optional[int] = None,
+    randomize_stacks: bool = False,
+    fold_penalty: float = 0.075,
+    seed: int = 0,
+    fixed_opponent_archetypes: Optional[List[int]] = None,
+    league_pool: Optional[Any] = None,
+):
+    """Creates a closure that returns a Model E MultiDrawPokerGymEnv (91 dims + discard masking)."""
+    return make_multi_env(
+        num_seats=num_seats,
+        starting_chips=starting_chips,
+        small_blind=small_blind,
+        big_blind=big_blind,
+        hero_seat=hero_seat,
+        max_hands_per_session=max_hands_per_session,
+        blind_escalation_interval=blind_escalation_interval,
+        randomize_stacks=randomize_stacks,
+        fold_penalty=fold_penalty,
+        seed=seed,
+        fixed_opponent_archetypes=fixed_opponent_archetypes,
+        obs_dim=ModelObsDim.MODEL_E,
+        discard_masking=True,
+        league_pool=league_pool,
+    )
+
+
+def make_model_f_multi_env(
+    num_seats: int = 5,
+    starting_chips: int = 200,
+    small_blind: int = 1,
+    big_blind: int = 2,
+    hero_seat: Optional[int] = None,
+    max_hands_per_session: int = 150,
+    blind_escalation_interval: Optional[int] = None,
+    randomize_stacks: bool = False,
+    fold_penalty: float = 0.075,
+    seed: int = 0,
+    fixed_opponent_archetypes: Optional[List[int]] = None,
+    league_pool: Optional[Any] = None,
+):
+    """Creates a closure that returns a Model F MultiDrawPokerGymEnv (97 dims + discard masking)."""
+    return make_multi_env(
+        num_seats=num_seats,
+        starting_chips=starting_chips,
+        small_blind=small_blind,
+        big_blind=big_blind,
+        hero_seat=hero_seat,
+        max_hands_per_session=max_hands_per_session,
+        blind_escalation_interval=blind_escalation_interval,
+        randomize_stacks=randomize_stacks,
+        fold_penalty=fold_penalty,
+        seed=seed,
+        fixed_opponent_archetypes=fixed_opponent_archetypes,
+        obs_dim=ModelObsDim.MODEL_F,
+        discard_masking=True,
+        league_pool=league_pool,
+    )
+
+
+# Backward-compatible alias
+make_superhuman_multi_env = make_model_c_multi_env
 
 
 def multi_mask_fn(env) -> np.ndarray:
@@ -547,4 +913,5 @@ def multi_mask_fn(env) -> np.ndarray:
     if hasattr(env, "unwrapped") and hasattr(env.unwrapped, "action_masks"):
         return env.unwrapped.action_masks()
     raise AttributeError(f"Environment {env} has no action_masks method")
+
 

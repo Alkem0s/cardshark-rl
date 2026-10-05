@@ -155,6 +155,10 @@ def run_head_to_head_comparison(
     d_survivals = 0
     c_survivals = 0
 
+    # Outlasting: which model finished higher/with more chips
+    d_outlasted_c = 0
+    c_outlasted_d = 0
+
     # Direct duels: When it comes down to final 2 (Model D vs Model C), who wins?
     direct_duels_d_won = 0
     direct_duels_c_won = 0
@@ -173,11 +177,11 @@ def run_head_to_head_comparison(
 
         obs, info = env.reset(seed=seed + sess * 79)
 
-        # Seat 1: The other neural model
+        # Seat 1: The other neural model (strictly deterministic parity)
         if is_d_hero:
-            env.opponents[1] = LeagueOpponent(model_path=model_c_path, opponent_id=1, name="Model_C")
+            env.opponents[1] = LeagueOpponent(model_path=model_c_path, opponent_id=1, name="Model_C", deterministic=True)
         else:
-            env.opponents[1] = LeagueOpponent(model_path=model_d_path, opponent_id=1, name="Model_D")
+            env.opponents[1] = LeagueOpponent(model_path=model_d_path, opponent_id=1, name="Model_D", deterministic=True)
 
         # Seat 2: Model B
         if model_b_bot:
@@ -195,8 +199,12 @@ def run_head_to_head_comparison(
             obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
 
-        # Extract final table chips
-        hands_in_session = info.get("hands_played", 1)
+        # Complete tournament if hero busted early so tournament plays down to 1 survivor
+        if len(env.env.alive_seats) > 1 and not env.env.session_done and env.env.hands_played < max_hands:
+            env.step_table_until_winner()
+
+        # Extract final table chips after complete tournament simulation
+        hands_in_session = env.env.hands_played
         total_hands_played += hands_in_session
         session_hands_list.append(hands_in_session)
 
@@ -220,6 +228,12 @@ def run_head_to_head_comparison(
             d_survivals += 1
         if chips_c > 0:
             c_survivals += 1
+
+        # Direct outlasting comparison
+        if chips_d > chips_c:
+            d_outlasted_c += 1
+        elif chips_c > chips_d:
+            c_outlasted_d += 1
 
         # Determine Winner
         winner_seat = None
@@ -314,6 +328,12 @@ def run_head_to_head_comparison(
             "adversaries_titles": other_titles,
             "adversaries_win_rate_pct": round(other_win_rate, 1),
         },
+        "head_to_head_outlast": {
+            "model_d_outlasted_c": d_outlasted_c,
+            "model_c_outlasted_d": c_outlasted_d,
+            "model_d_outlast_pct": round(d_outlasted_c / num_sessions * 100.0, 1),
+            "model_c_outlast_pct": round(c_outlasted_d / num_sessions * 100.0, 1),
+        },
         "direct_duels": {
             "model_d_won": direct_duels_d_won,
             "model_c_won": direct_duels_c_won,
@@ -335,6 +355,7 @@ def run_head_to_head_comparison(
         print("-" * 76)
         print(f"{'1st Place Championship Rate':<32} | {d_win_rate:>6.1f}% [{d_ci_low}-{d_ci_high}%]  | {c_win_rate:>6.1f}% [{c_ci_low}-{c_ci_high}%]")
         print(f"{'Total Titles Won':<32} | {d_titles:>6} / {num_sessions:<9} | {c_titles:>6} / {num_sessions:<9}")
+        print(f"{'Head-to-Head Outlast Rate':<32} | {d_outlasted_c / num_sessions * 100:>6.1f}% ({d_outlasted_c})        | {c_outlasted_d / num_sessions * 100:>6.1f}% ({c_outlasted_d})")
         print(f"{'BB/100 Win Rate':<32} | {d_bb_100:>+10.2f} BB/100   | {c_bb_100:>+10.2f} BB/100")
         print(f"{'Average Final Chip Share':<32} | {d_avg_share:>6.1f}% (Par: 20%)   | {c_avg_share:>6.1f}% (Par: 20%)")
         print(f"{'Tournament Survival Rate':<32} | {d_surv_rate:>6.1f}%              | {c_surv_rate:>6.1f}%")
