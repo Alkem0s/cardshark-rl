@@ -6,12 +6,12 @@ Generates publication-quality performance dashboards:
 - Model B: 5-seat multi-player tournament metrics
 - Model C: 4-panel superhuman dashboard & intra-hand sequence analysis
 - Model D: 4-panel champion dashboard (Attention invariance & SGDR schedule)
+- Model E: 4-panel superhuman crusher dashboard (ICM dynamics & dominated discard pruning)
+- Model F: 4-panel co-evolutionary champion dashboard (Decoupled gradients & auxiliary belief)
 
 Usage:
-    python visualizer.py --model a [options]
-    python visualizer.py --model b [options]
-    python visualizer.py --model c [options]
-    python visualizer.py --model d [options]
+    python visualizer.py --model [a|b|c|d|e|f] [options]
+    python visualizer.py --help
 """
 
 import os
@@ -26,6 +26,8 @@ MODEL_SCRIPTS = {
     "b": "visualizer_model_b.py",
     "c": "visualizer_model_c.py",
     "d": "visualizer_model_d.py",
+    "e": "visualizer_model_e.py",
+    "f": "visualizer_model_f.py",
 }
 
 
@@ -40,7 +42,11 @@ def __getattr__(name: str):
 
 def main():
     args = sys.argv[1:]
-    model = "d"  # Default champion
+    if ("--help" in args or "-h" in args) and not any(k in args for k in ("--model", "-m")) and not (args and args[0].lower() in MODEL_SCRIPTS):
+        print(__doc__)
+        return
+
+    model = "f"  # Default champion
     remaining_args = []
 
     i = 0
@@ -51,7 +57,7 @@ def main():
         elif args[i].startswith("--model="):
             model = args[i].split("=")[1].lower()
             i += 1
-        elif args[i].lower() in ("a", "b", "c", "d") and i == 0:
+        elif args[i].lower() in MODEL_SCRIPTS and i == 0:
             model = args[i].lower()
             i += 1
         else:
@@ -59,8 +65,8 @@ def main():
             i += 1
 
     if model not in MODEL_SCRIPTS:
-        print(f"Error: Unknown model '{model}'. Valid options: a, b, c, d.")
-        print("Usage: python visualizer.py --model [a|b|c|d] [options]")
+        print(f"Error: Unknown model '{model}'. Valid options: {', '.join(MODEL_SCRIPTS.keys())}.")
+        print("Usage: python visualizer.py --model [a|b|c|d|e|f] [options]")
         sys.exit(1)
 
     script_name = MODEL_SCRIPTS[model]

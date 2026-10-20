@@ -1,0 +1,14 @@
+{
+  "embed_dim": 32,
+  "num_heads": 4,
+  "pooling": "mean",
+  "card_features_dim": 64,
+  "learning_rate": 7.918515779559379e-05,
+  "min_lr_ratio": 0.1528468876827223,
+  "n_restart_cycles": 5,
+  "clip_range": 0.15464504127199977,
+  "initial_ent_coef": 0.020188621297535958,
+  "gamma": 0.9872168136079348,
+  "gae_lambda": 0.9039030955791167,
+  "fold_penalty": 0.0769331322352
+}

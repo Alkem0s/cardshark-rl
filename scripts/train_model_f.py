@@ -219,6 +219,12 @@ class ModelFSessionCallback(BaseCallback):
             if self.save_best_path and len(self.winner_history) >= min(self.window, 30) and rolling_win > self.best_win_rate:
                 self.best_win_rate = rolling_win
                 self.model.save(self.save_best_path)
+                fcd_best = os.path.join(os.path.dirname(self.save_best_path), "five_card_draw", os.path.basename(self.save_best_path))
+                try:
+                    os.makedirs(os.path.dirname(fcd_best), exist_ok=True)
+                    self.model.save(fcd_best)
+                except Exception:
+                    pass
                 if self.verbose > 0:
                     print(f"      >>> [NEW BEST MODEL F] Saved peak checkpoint: {self.save_best_path} ({rolling_win:.1f}% win rate) <<<")
         return True
@@ -402,8 +408,8 @@ def train_model_f(
         seed=seed,
     )
 
-    # Feature extractor dimension: embed_dim (32) + 5 * slot_features_dim (120) + game_features_dim (64) = 216
-    extracted_feature_dim = embed_dim + (5 * slot_features_dim) + game_features_dim
+    # Feature extractor dimension dynamically extracted from the instantiated policy backbone
+    extracted_feature_dim = model.policy.features_extractor.features_dim
     belief_head = AuxiliaryBeliefHead(feature_dim=extracted_feature_dim, hidden_dim=128)
 
     aux_callback = AuxiliaryBeliefCallback(
@@ -445,6 +451,12 @@ def train_model_f(
         print("\n[Training] Interrupted by user. Saving current checkpoint...")
     finally:
         model.save(save_path)
+        fcd_path = os.path.join(save_dir, "five_card_draw", model_name)
+        try:
+            os.makedirs(os.path.dirname(fcd_path), exist_ok=True)
+            model.save(fcd_path)
+        except Exception:
+            pass
         elapsed = time.time() - t0
         print(f"\n[Training Complete] Elapsed time: {elapsed/60:.1f} mins | Saved to: {save_path}")
 

@@ -108,9 +108,9 @@ def test_model_a_adapter():
     print("  Model A 1v1 adapter: PASS")
 
 
-def test_neural_models_b_c_d():
-    print("[4/5] Testing neural models (B, C, D)...")
-    for diff in ["normal", "hard", "champion"]:
+def test_neural_models():
+    print("[4/5] Testing neural models (B, C, D, E, F)...")
+    for diff in ["normal", "hard", "champion", "model_e", "model_f"]:
         npc = CardSharkNPC(difficulty=diff)
         test_cards = [
             {"rank": "8", "suit": "♣"},
@@ -121,7 +121,7 @@ def test_neural_models_b_c_d():
         ]
         act = npc.get_action(test_cards, pot=30, bet_to_call=4, phase="pre_draw")
         assert act["action_type"] in ("fold", "call", "raise", "all_in")
-        print(f"  Model '{diff}' decision: {act['action_type']} (amt={act['raise_amount']})")
+        print(f"  Model '{diff}' decision: {act['action_type']} (amt={act['raise_amount']}, obs_dim={npc.obs_dim})")
 
 
 def test_edge_cases_and_graceful_fallbacks():
@@ -218,7 +218,7 @@ if __name__ == "__main__":
     test_random_cycling_bot()
     test_heuristic_archetypes_inference()
     test_model_a_adapter()
-    test_neural_models_b_c_d()
+    test_neural_models()
     test_edge_cases_and_graceful_fallbacks()
     test_variable_player_counts()
     test_tiered_difficulty_modes()

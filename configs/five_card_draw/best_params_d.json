@@ -1,0 +1,31 @@
+{
+  "embed_dim": 32,
+  "num_heads": 4,
+  "pooling": "attention",
+  "card_features_dim": 32,
+  "slot_features_dim": 24,
+  "net_arch": [
+    256,
+    256,
+    256
+  ],
+  "learning_rate": 0.000165,
+  "min_lr": 2.0e-05,
+  "n_restart_cycles": 5,
+  "n_steps": 1024,
+  "batch_size": 128,
+  "n_epochs": 7,
+  "gamma": 0.994,
+  "gae_lambda": 0.913,
+  "clip_range": 0.185,
+  "ent_coef": 0.0065,
+  "vf_coef": 0.52,
+  "max_grad_norm": 0.65,
+  "fold_penalty": 0.075,
+  "blind_escalation": 14,
+  "fitness_score": -60.89,
+  "bb_per_100": -86.60215053763442,
+  "survival_rate_pct": 17.142857142857142,
+  "first_place_rate_pct": 17.142857142857142,
+  "avg_final_chip_share_pct": 8.494285714285713
+}

@@ -27,6 +27,8 @@ from game.multi_opponents import (
 
 OBS_DIM = 63
 SUPERHUMAN_OBS_DIM = 87
+MODEL_E_OBS_DIM = 91
+MODEL_F_OBS_DIM = 97
 
 
 def parse_card_to_int(c: Any) -> int:
@@ -66,6 +68,9 @@ class CardSharkNPC:
         self.heuristic_bot = None
         self.model = None
         self.tracker = None
+        self.discard_masking = False
+        self.is_model_e = False
+        self.is_model_f = False
 
         if self.is_heuristic:
             self._init_heuristic()
@@ -91,6 +96,9 @@ class CardSharkNPC:
         self.obs_dim = 0
         self.is_superhuman = False
         self.is_model_a = False
+        self.is_model_e = False
+        self.is_model_f = False
+        self.discard_masking = False
         print(f"[CardSharkNPC] Initialized pure rule-based bot [{self.heuristic_bot.name}].")
 
     def _init_neural(self, model_path: Optional[str]):
@@ -98,9 +106,12 @@ class CardSharkNPC:
             import sys
             import rl.card_attention
             sys.modules["card_attention"] = rl.card_attention
+            import rl.decoupled_actor
+            sys.modules["decoupled_actor"] = rl.decoupled_actor
             from sb3_contrib import MaskablePPO
             from rl.opponent_tracker import TableOpponentTracker
             from rl.card_attention import CardAttentionExtractor
+            from rl.decoupled_actor import DecoupledActionNet, DecoupledMaskableActorCriticPolicy
         except ImportError as e:
             print(f"[CardSharkNPC] Notice: ML dependencies not found ({e}). Falling back to Heuristic TAG bot.")
             self.is_heuristic = True
@@ -110,14 +121,28 @@ class CardSharkNPC:
         self.tracker = TableOpponentTracker(num_seats=self.num_seats)
 
         if model_path is None:
+            def _find_checkpoint(filename: str) -> str:
+                # Check root models/ first, then game-partitioned directory
+                root_path = os.path.join("models", filename)
+                if os.path.exists(root_path):
+                    return root_path
+                partitioned_path = os.path.join("models", "five_card_draw", filename)
+                if os.path.exists(partitioned_path):
+                    return partitioned_path
+                return root_path
+
             if self.is_model_a:
-                model_path = "models/model_a.zip"
+                model_path = _find_checkpoint("model_a.zip")
+            elif self.difficulty in ("apex", "omega", "crusher_f", "model_f", "f"):
+                model_path = _find_checkpoint("model_f.zip")
+            elif self.difficulty in ("superhuman_crusher", "crusher", "model_e", "e"):
+                model_path = _find_checkpoint("model_e.zip")
             elif self.difficulty in ("grandmaster", "champion", "expert", "model_d", "d"):
-                model_path = "models/model_d.zip"
+                model_path = _find_checkpoint("model_d.zip")
             elif self.difficulty in ("master", "hard", "superhuman", "model_c", "c"):
-                model_path = "models/model_c.zip"
+                model_path = _find_checkpoint("model_c.zip")
             else:
-                model_path = "models/model_b.zip"
+                model_path = _find_checkpoint("model_b.zip")
 
         if not os.path.exists(model_path):
             print(f"[CardSharkNPC] Warning: Checkpoint {model_path} not found. Falling back to heuristic bot.")
@@ -129,7 +154,10 @@ class CardSharkNPC:
         self.model = MaskablePPO.load(model_path)
         self.obs_dim = self.model.observation_space.shape[0]
         self.is_model_a = (self.obs_dim in (26, 33))
-        self.is_superhuman = (self.obs_dim == SUPERHUMAN_OBS_DIM)
+        self.is_superhuman = (self.obs_dim >= SUPERHUMAN_OBS_DIM)
+        self.is_model_e = (self.obs_dim >= MODEL_E_OBS_DIM)
+        self.is_model_f = (self.obs_dim >= MODEL_F_OBS_DIM)
+        self.discard_masking = (self.obs_dim >= MODEL_E_OBS_DIM)
 
     def get_action(
         self,
@@ -212,9 +240,10 @@ class CardSharkNPC:
             seat_post_draw_actions=seat_post_draw_actions,
             seat_pre_draw_bets=seat_pre_draw_bets,
             seat_post_draw_bets=seat_post_draw_bets,
+            big_blind=big_blind,
         )
 
-        mask = self._build_mask(phase, bet_to_call, npc_chips, pot, big_blind)
+        mask = self._build_mask(phase, bet_to_call, npc_chips, pot, big_blind, npc_hand=npc_hand)
         action_id, _ = self.model.predict(obs, action_masks=mask, deterministic=True)
         action_id = int(action_id)
 
@@ -316,7 +345,15 @@ class CardSharkNPC:
                 "inferred_tells": {},
             }
 
-    def _build_mask(self, phase: str, bet_to_call: int, chips: int, pot: int, big_blind: int) -> np.ndarray:
+    def _build_mask(
+        self,
+        phase: str,
+        bet_to_call: int,
+        chips: int,
+        pot: int,
+        big_blind: int,
+        npc_hand: Optional[List[int]] = None,
+    ) -> np.ndarray:
         mask = np.zeros(TOTAL_ACTIONS, dtype=np.int8)
         if phase in (PHASE_PRE_DRAW, PHASE_POST_DRAW):
             mask[A_FOLD] = 1
@@ -333,7 +370,16 @@ class CardSharkNPC:
                 if chips_after_call >= pot_raise:
                     mask[A_POT] = 1
         elif phase == PHASE_DRAW:
-            mask[A_DRAW_START:TOTAL_ACTIONS] = 1
+            if getattr(self, "discard_masking", False) and npc_hand and len(npc_hand) == 5:
+                from rl.discard_masker import get_legal_discard_mask
+                discard_mask = get_legal_discard_mask(npc_hand)
+                for bitmask_idx in range(len(discard_mask)):
+                    if discard_mask[bitmask_idx]:
+                        mask[A_DRAW_START + bitmask_idx] = 1
+                if not np.any(mask[A_DRAW_START:]):
+                    mask[A_DRAW_START] = 1
+            else:
+                mask[A_DRAW_START:TOTAL_ACTIONS] = 1
         return mask
 
     def _build_observation(
@@ -354,6 +400,7 @@ class CardSharkNPC:
         seat_post_draw_actions: Optional[List[int]] = None,
         seat_pre_draw_bets: Optional[List[int]] = None,
         seat_post_draw_bets: Optional[List[int]] = None,
+        big_blind: int = 2,
     ) -> np.ndarray:
         total_chips = max(1.0, float(total_table_chips))
         pot_f = float(pot)
@@ -422,7 +469,7 @@ class CardSharkNPC:
             opp_vector
         )
 
-        if not self.is_superhuman:
+        if self.obs_dim <= OBS_DIM or not self.is_superhuman:
             return np.array(obs[:OBS_DIM], dtype=np.float32)
 
         # 7. Model C / Model D Superhuman Sequence & Dynamic Recency Memory (24: 4 slots x 6 features)
@@ -477,7 +524,66 @@ class CardSharkNPC:
             superhuman_features.extend(slot_seq)
 
         obs = obs + superhuman_features
-        return np.array(obs[:SUPERHUMAN_OBS_DIM], dtype=np.float32)
+        if self.obs_dim <= SUPERHUMAN_OBS_DIM:
+            return np.array(obs[:SUPERHUMAN_OBS_DIM], dtype=np.float32)
+
+        # 8. Model E Tournament ICM Dynamics (4 features)
+        bb = max(1.0, float(big_blind))
+        stack_bb_norm = float(np.clip((npc_chips / bb) / 50.0, 0.0, 2.0)) - 1.0
+        pot_bb_norm = float(np.clip((pot_f / bb) / 25.0, 0.0, 2.0)) - 1.0
+        bb_pressure_norm = float(np.clip((bb / total_chips) * 10.0, 0.0, 2.0)) - 1.0
+        escalation_clock = 0.0
+        icm_features = [stack_bb_norm, pot_bb_norm, bb_pressure_norm, escalation_clock]
+        obs = obs + icm_features
+
+        if self.obs_dim <= MODEL_E_OBS_DIM:
+            return np.array(obs[:MODEL_E_OBS_DIM], dtype=np.float32)
+
+        # 9. Model F Game-Theoretic Geometry & Information Features (6 features)
+        pot_odds_raw = btc_f / max(1.0, pot_f + btc_f)
+        pot_odds_norm = float(np.clip(pot_odds_raw * 2.0 - 1.0, -1.0, 1.0))
+
+        mdf_raw = pot_f / max(1.0, pot_f + btc_f)
+        mdf_norm = float(np.clip(mdf_raw * 2.0 - 1.0, -1.0, 1.0))
+
+        aggressor_seat = -1
+        max_invest = 0
+        if seat_invested:
+            for s in range(self.num_seats):
+                if s != self.npc_seat and seat_alive[s] and seat_in_hand[s]:
+                    if seat_invested[s] > max_invest:
+                        max_invest = seat_invested[s]
+                        aggressor_seat = s
+
+        if aggressor_seat != -1 and seat_draw_counts and seat_draw_counts[aggressor_seat] >= 0:
+            aggressor_draw_norm = float(np.clip((seat_draw_counts[aggressor_seat] / 5.0) * 2.0 - 1.0, -1.0, 1.0))
+            pre_bet = max(1.0, float(seat_pre_draw_bets[aggressor_seat] if seat_pre_draw_bets else 1.0))
+            post_bet = float(seat_post_draw_bets[aggressor_seat] if seat_post_draw_bets else 0.0)
+            escalation_norm = float(np.clip((post_bet / pre_bet) - 1.0, -1.0, 1.0))
+        else:
+            aggressor_draw_norm = 0.0
+            escalation_norm = 0.0
+
+        if npc_hand and len(npc_hand) == 5:
+            hand_pctl_norm = float(np.clip((hand_category(npc_hand) / 8.0) * 2.0 - 1.0, -1.0, 1.0))
+        else:
+            hand_pctl_norm = -1.0
+
+        facing_probe = 0.0
+        if phase == PHASE_POST_DRAW and btc_f > 0:
+            facing_probe = 0.5
+        facing_probe_norm = float(facing_probe * 2.0 - 1.0)
+
+        model_f_features = [
+            pot_odds_norm,
+            mdf_norm,
+            aggressor_draw_norm,
+            escalation_norm,
+            hand_pctl_norm,
+            facing_probe_norm,
+        ]
+        obs = obs + model_f_features
+        return np.array(obs[:self.obs_dim], dtype=np.float32)
 
     def _translate_action(self, action_id: int, phase: str, pot: int, bet_to_call: int, npc_chips: int, big_blind: int) -> dict:
         action_type = "call"
