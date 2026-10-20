@@ -23,14 +23,24 @@ from __future__ import annotations
 from typing import List, Set, Tuple
 import numpy as np
 
-from game.card_utils import (
-    hand_category,
-    get_pairs_info,
-    has_flush_draw,
-    has_straight_draw,
-    rank_of,
-    suit_of,
-)
+try:
+    from games.five_card_draw.rules import (
+        hand_category,
+        get_pairs_info,
+        has_flush_draw,
+        has_straight_draw,
+        rank_of,
+        suit_of,
+    )
+except ImportError:
+    from game.card_utils import (
+        hand_category,
+        get_pairs_info,
+        has_flush_draw,
+        has_straight_draw,
+        rank_of,
+        suit_of,
+    )
 
 NUM_DRAW_ACTIONS = 32  # 2^5 bitmask combinations
 

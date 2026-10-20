@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CardShark-RL — Universal Poker Lounge</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        :root {
+            --felt-base: #0c291e;
+            --felt-highlight: #1b4d38;
+            --felt-border: #06150f;
+            --bg-dark: #0a0d10;
+            --panel-bg: rgba(18, 24, 32, 0.85);
+            --panel-border: rgba(255, 255, 255, 0.1);
+            --gold: #f39c12;
+            --gold-glow: rgba(243, 156, 18, 0.45);
+            --emerald: #10b981;
+            --red: #ef4444;
+            --text-main: #f8fafc;
+            --text-dim: #94a3b8;
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: radial-gradient(circle at 50% 20%, #151d24 0%, var(--bg-dark) 100%);
+            color: var(--text-main);
+            margin: 0;
+            padding: 24px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 4px;
+        }
+        h1 {
+            color: #34d399;
+            font-size: 2.2rem;
+            font-weight: 900;
+            letter-spacing: -0.5px;
+            margin: 0;
+            text-shadow: 0 0 20px rgba(52, 211, 153, 0.3);
+        }
+        .header-badge {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: #000;
+            font-size: 0.72rem;
+            font-weight: 900;
+            padding: 3px 8px;
+            border-radius: 999px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .subtitle {
+            color: var(--text-dim);
+            font-size: 0.95rem;
+            margin-bottom: 24px;
+        }
+
+        /* Glassmorphism Panels */
+        .glass-panel {
+            background: var(--panel-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 28px;
+            width: 100%;
+            max-width: 680px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+            margin-bottom: 20px;
+        }
+
+        /* Game Mode Selection Grid */
+        .mode-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin: 16px 0 24px 0;
+        }
+        .mode-card {
+            background: #151c24;
+            border: 2px solid #253140;
+            border-radius: 12px;
+            padding: 16px 12px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+        .mode-card:hover {
+            border-color: #3b82f6;
+            transform: translateY(-2px);
+        }
+        .mode-card.active {
+            border-color: var(--gold);
+            background: #1e2632;
+            box-shadow: 0 0 20px var(--gold-glow);
+        }
+        .mode-icon { font-size: 28px; margin-bottom: 6px; }
+        .mode-title { font-weight: 800; font-size: 0.95rem; margin-bottom: 4px; }
+        .mode-desc { font-size: 0.72rem; color: var(--text-dim); line-height: 1.25; }
+
+        label { font-size: 0.85rem; font-weight: 700; color: var(--text-dim); margin-bottom: 6px; display: block; text-transform: uppercase; letter-spacing: 0.5px; }
+        input, select {
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 8px;
+            border: 1px solid #2d3b4e;
+            background: #111720;
+            color: white;
+            font-family: inherit;
+            font-size: 0.95rem;
+            margin-bottom: 18px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        input:focus, select:focus { border-color: #38bdf8; }
+
+        button.btn-primary {
+            background: linear-gradient(135deg, #059669, #10b981);
+            color: white;
+            font-family: inherit;
+            font-weight: 800;
+            font-size: 1rem;
+            border: none;
+            padding: 14px 24px;
+            border-radius: 10px;
+            cursor: pointer;
+            width: 100%;
+            box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);
+            transition: all 0.15s ease;
+        }
+        button.btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.6);
+        }
+        button.btn-secondary {
+            background: #1e293b;
+            color: white;
+            font-family: inherit;
+            font-weight: 700;
+            font-size: 0.9rem;
+            border: 1px solid #334155;
+            padding: 10px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        button.btn-secondary:hover { background: #334155; }
+
+        /* Poker Table Felt */
+        #game-board {
+            display: none;
+            background: radial-gradient(circle at 50% 50%, var(--felt-highlight) 0%, var(--felt-base) 100%);
+            border: 16px solid var(--felt-border);
+            border-radius: 70px;
+            padding: 30px;
+            width: 100%;
+            max-width: 940px;
+            position: relative;
+            box-shadow: 0 25px 60px rgba(0,0,0,0.9), inset 0 0 60px rgba(0,0,0,0.6);
+            margin-bottom: 24px;
+        }
+
+        .table-hud {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 30px;
+            padding: 10px 24px;
+            margin-bottom: 24px;
+            font-size: 0.9rem;
+        }
+        .table-badge {
+            background: rgba(245, 158, 11, 0.2);
+            color: #fbbf24;
+            border: 1px solid #f59e0b;
+            padding: 4px 12px;
+            border-radius: 999px;
+            font-weight: 800;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+        }
+
+        /* Community / Center Area */
+        #center-felt {
+            min-height: 110px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin: 10px 0 24px 0;
+        }
+        .pot-display {
+            font-size: 1.4rem;
+            font-weight: 900;
+            color: #34d399;
+            text-shadow: 0 0 16px rgba(52, 211, 153, 0.5);
+            margin-bottom: 8px;
+        }
+        .community-cards-row {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+        }
+
+        /* Opponents Layout */
+        .opponents-grid {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .player-badge {
+            background: rgba(15, 23, 42, 0.9);
+            border: 2px solid #334155;
+            border-radius: 12px;
+            padding: 12px 16px;
+            min-width: 140px;
+            position: relative;
+            text-align: center;
+            box-shadow: 0 6px 16px rgba(0,0,0,0.5);
+            transition: all 0.2s ease;
+        }
+        .player-badge.active-turn {
+            border-color: var(--gold);
+            box-shadow: 0 0 20px var(--gold-glow);
+            transform: scale(1.02);
+        }
+        .player-badge.folded { opacity: 0.4; }
+        .dealer-btn {
+            position: absolute;
+            top: -10px; right: -10px;
+            background: #fff; color: #000;
+            width: 24px; height: 24px;
+            border-radius: 50%;
+            font-weight: 900; font-size: 12px;
+            display: flex; align-items: center; justify-content: center;
+            border: 2px solid #000;
+        }
+
+        /* Cards */
+        .hand {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 14px;
+            min-height: 105px;
+        }
+        .card {
+            background: #fff;
+            color: #111;
+            width: 62px;
+            height: 94px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 6px;
+            font-weight: 800;
+            font-size: 1.15rem;
+            cursor: pointer;
+            user-select: none;
+            transition: transform 0.15s, box-shadow 0.15s;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+        .card.selected {
+            transform: translateY(-16px);
+            border: 3px solid var(--gold);
+            box-shadow: 0 10px 24px var(--gold-glow);
+        }
+        .card.hidden {
+            background: #1e3a5f;
+            background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.1) 5px, rgba(255,255,255,0.1) 10px);
+            border: 2px solid #fff;
+            color: transparent;
+        }
+        .card.red { color: #dc2626; }
+        .card.black { color: #0f172a; }
+        .card-corner { font-size: 0.95rem; line-height: 1; text-align: left; }
+        .card-center { font-size: 1.4rem; text-align: center; }
+
+        /* Action Controls */
+        #controls {
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid #334155;
+            border-radius: 16px;
+            padding: 16px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .btn-action {
+            background: #2563eb;
+            color: #fff;
+            font-family: inherit;
+            font-weight: 700;
+            font-size: 0.88rem;
+            border: none;
+            padding: 10px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .btn-action:hover { background: #3b82f6; transform: translateY(-1px); }
+        .btn-action.danger { background: #dc2626; }
+        .btn-action.danger:hover { background: #ef4444; }
+        .btn-action.success { background: #059669; }
+        .btn-action.success:hover { background: #10b981; }
+        .btn-action.warn { background: #d97706; }
+        .btn-action.warn:hover { background: #f59e0b; }
+
+        /* Action Log */
+        #logs {
+            background: #0f172a;
+            border: 1px solid #1e293b;
+            border-radius: 12px;
+            padding: 14px;
+            height: 140px;
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            width: 100%;
+            max-width: 940px;
+            text-align: left;
+        }
+        .log-sys { color: #64748b; }
+        .log-act { color: #38bdf8; }
+        .log-win { color: #34d399; font-weight: 700; }
+        .log-warn { color: #fbbf24; }
+    </style>
+</head>
+<body>
+
+    <div class="header-title">
+        <h1>CardShark-RL</h1>
+        <span class="header-badge">Universal Lounge</span>
+    </div>
+    <div class="subtitle">Multi-Game Autonomous RL Poker Arena & Human Sparring Client</div>
+
+    <!-- Universal Lobby Panel -->
+    <div id="lobby" class="glass-panel">
+        <label>1. Select Poker Variant</label>
+        <div class="mode-grid">
+            <div class="mode-card active" onclick="selectGameMode('five_card_draw')" id="card-fcd">
+                <div class="mode-icon">🃏</div>
+                <div class="mode-title">5-Card Draw</div>
+                <div class="mode-desc">High Poker · 1 Draw · Models A..F</div>
+            </div>
+            <div class="mode-card" onclick="selectGameMode('triple_draw_27')" id="card-td">
+                <div class="mode-icon">🎯</div>
+                <div class="mode-title">2-7 Triple Draw</div>
+                <div class="mode-desc">Kansas City Lowball · 3 Draws · Nut 7-5-4-3-2</div>
+            </div>
+            <div class="mode-card" onclick="selectGameMode('holdem')" id="card-holdem">
+                <div class="mode-icon">♠️</div>
+                <div class="mode-title">Texas Hold'em</div>
+                <div class="mode-desc">No-Limit NLHE · Flop, Turn, River</div>
+            </div>
+        </div>
+
+        <label>2. Player Identity</label>
+        <input type="text" id="playerName" placeholder="Your table display name" value="Human Player">
+
+        <label>3. Default Bot Opponent Tier</label>
+        <select id="botRosterSelect"></select>
+
+        <label>4. Starting Chip Depth</label>
+        <select id="startingChipsSelect">
+            <option value="1000" selected>$1,000 (Standard 100 BB)</option>
+            <option value="2000">$2,000 (Deep Stack 200 BB)</option>
+            <option value="500">$500 (Short Stack 50 BB)</option>
+        </select>
+
+        <button class="btn-primary" onclick="hostGame()">Launch Table & Start Game</button>
+
+        <div style="margin-top: 20px; display: flex; gap: 8px;">
+            <input type="text" id="joinId" placeholder="Or paste Table Room ID to join P2P" style="margin-bottom:0;">
+            <button class="btn-secondary" onclick="joinGame()" style="white-space:nowrap;">Join Table</button>
+        </div>
+    </div>
+
+    <!-- Active Poker Table Area -->
+    <div id="game-board">
+        <div class="table-hud">
+            <div><strong>Table:</strong> <span id="boardRoomId" style="color:var(--gold); cursor:pointer;">...</span></div>
+            <div><strong>Mode:</strong> <span class="table-badge" id="modeDisplayBadge">5-Card Draw</span></div>
+            <div><strong>Phase:</strong> <span id="phaseDisplay" style="color:var(--gold); font-weight:800; text-transform:uppercase;">Waiting</span></div>
+            <div><strong>Min Bet:</strong> $<span id="minRaiseDisplay">20</span></div>
+        </div>
+
+        <!-- Center Community Felt -->
+        <div id="center-felt">
+            <div class="pot-display">Pot: $<span id="potDisplay">0</span></div>
+            <div id="communityContainer" class="community-cards-row"></div>
+            <div id="roundNotice" style="font-size:0.8rem; color:var(--text-dim); margin-top:6px;"></div>
+        </div>
+
+        <!-- Opponents Grid -->
+        <div id="opponents" class="opponents-grid"></div>
+
+        <!-- Hero Hand Section -->
+        <div style="margin-top: 10px; text-align: center;">
+            <div style="font-weight: 700; font-size: 1rem;">
+                Your Stack: <span style="color:#34d399;">$<span id="myChipsDisplay">1000</span></span>
+            </div>
+            <div id="myHand" class="hand"></div>
+            <div id="myEval" style="color:#fbbf24; font-size:0.95rem; font-weight:700; margin-top:8px;"></div>
+        </div>
+
+        <!-- Controls -->
+        <div id="controls" style="margin-top: 20px;">
+            <button id="btnDeal" class="btn-action success" onclick="dealHand()" style="display:none;">Deal Next Hand</button>
+            <button id="btnAddBot" class="btn-action warn" onclick="addBotToTable()">+ Add Bot</button>
+            <button id="btnFold" class="btn-action danger" onclick="playerAction('fold')" style="display:none;">Fold</button>
+            <button id="btnCheck" class="btn-action" onclick="playerAction('call')" style="display:none;">Check</button>
+            <button id="btnCall" class="btn-action" onclick="playerAction('call')" style="display:none;">Call $<span id="callAmountBtn">0</span></button>
+            <button id="btnMinRaise" class="btn-action" onclick="playerAction('raise_min')" style="display:none;">Min-Raise</button>
+            <button id="btnHalfPot" class="btn-action" onclick="playerAction('raise_half_pot')" style="display:none;">½ Pot</button>
+            <button id="btnPot" class="btn-action" onclick="playerAction('raise_pot')" style="display:none;">Pot</button>
+            <button id="btnAllIn" class="btn-action danger" onclick="playerAction('all_in')" style="display:none;">All-In</button>
+            <button id="btnSubmitDraw" class="btn-action warn" onclick="playerAction('draw')" style="display:none;">Discard Selected</button>
+        </div>
+    </div>
+
+    <!-- System Telemetry Logs -->
+    <div id="logs"></div>
+
+    <script>
+        const API_BASE = window.location.protocol.startsWith('http') ? '' : 'http://127.0.0.1:5000';
+        let currentMode = 'five_card_draw';
+        let peer = null;
+        let myId = null;
+        let isHost = true;
+        let connections = [];
+
+        const ROSTER_CONFIGS = {
+            five_card_draw: [
+                { id: "model_f", name: "🏆 Model F (Co-Evolutionary Champion)" },
+                { id: "model_e", name: "⚡ Model E (ICM Crusher)" },
+                { id: "model_d", name: "🧠 Model D (Card Attention AI)" },
+                { id: "model_c", name: "📈 Model C (Sequence Memory AI)" },
+                { id: "model_b", name: "🎲 Model B (Multiway Baseline)" },
+                { id: "tag", name: "🥊 TAG (Tight-Aggressive Textbook)" },
+                { id: "lag", name: "🔥 LAG (Loose-Aggressive Pressure)" },
+                { id: "calling_station", name: "🐟 Calling Station (Loose-Passive)" },
+                { id: "rock", name: "🪨 Rock (Ultra-Tight Nit)" },
+                { id: "maniac", name: "💣 Maniac (Hyper-Aggressive)" },
+                { id: "chameleon", name: "🎭 Chameleon (Random Persona Cycler)" },
+                { id: "exploiter", name: "🎯 Exploiter (Nemesis Trap Bot)" }
+            ],
+            triple_draw_27: [
+                { id: "model_27", name: "🏆 Model 27-A (RL Lowball Champion)" },
+                { id: "smooth", name: "✨ SmoothDrawBot (Lowball Fundamentalist)" },
+                { id: "pat", name: "🪨 PatStandBot (8-or-Better Low Stoic)" },
+                { id: "exploiter", name: "🎯 LowballExploiter (Snowing & Probe Nemesis)" },
+                { id: "random", name: "🎲 Random Lowballer" }
+            ],
+            holdem: [
+                { id: "model_holdem", name: "🏆 Model Holdem-A (RL NLHE Agent)" },
+                { id: "tag", name: "🥊 TAGBot (Selective Preflop, Aggressive Value)" },
+                { id: "lag", name: "🔥 LAGBot (Wide Range, Continuous Pressure)" },
+                { id: "calling_station", name: "🐟 CallingStation (Sticky Calling Machine)" },
+                { id: "random", name: "🎲 Random Holdem Bot" }
+            ]
+        };
+
+        function selectGameMode(mode) {
+            currentMode = mode;
+            ['card-fcd', 'card-td', 'card-holdem'].forEach(id => {
+                document.getElementById(id).classList.remove('active');
+            });
+            if (mode === 'five_card_draw') document.getElementById('card-fcd').classList.add('active');
+            if (mode === 'triple_draw_27') document.getElementById('card-td').classList.add('active');
+            if (mode === 'holdem') document.getElementById('card-holdem').classList.add('active');
+
+            const select = document.getElementById('botRosterSelect');
+            select.innerHTML = "";
+            ROSTER_CONFIGS[mode].forEach(b => {
+                let opt = document.createElement('option');
+                opt.value = b.id;
+                opt.innerText = b.name;
+                select.appendChild(opt);
+            });
+        }
+
+        selectGameMode('five_card_draw');
+
+        const log = (msg, type="log-sys") => {
+            const logs = document.getElementById('logs');
+            logs.innerHTML += `<div class="${type}">> ${msg}</div>`;
+            logs.scrollTop = logs.scrollHeight;
+        };
+
+        // --- Game State ---
+        let gameState = {
+            mode: 'five_card_draw',
+            phase: 'waiting',
+            drawRound: 0,
+            pot: 0,
+            currentBet: 0,
+            minRaise: 20,
+            dealerIndex: 0,
+            activePlayerIndex: 0,
+            players: [],
+            communityCards: [],
+            deck: [],
+            muck: []
+        };
+        let selectedCards = [];
+
+        const SUITS = ['♠', '♥', '♦', '♣'];
+        const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+        const RANK_VALS = {'2':0, '3':1, '4':2, '5':3, '6':4, '7':5, '8':6, '9':7, '10':8, 'J':9, 'Q':10, 'K':11, 'A':12};
+
+        function buildDeck() {
+            let deck = [];
+            SUITS.forEach(s => RANKS.forEach(r => deck.push({
+                suit: s, rank: r, color: (s==='♥'||s==='♦')?'red':'black', id: s + r
+            })));
+            return deck.sort(() => Math.random() - 0.5);
+        }
+
+        function drawCard() {
+            if (gameState.deck.length === 0) {
+                gameState.deck = gameState.muck.sort(() => Math.random() - 0.5);
+                gameState.muck = [];
+            }
+            return gameState.deck.pop();
+        }
+
+        function hostGame() {
+            const name = document.getElementById('playerName').value || "Player 1";
+            const startingChips = parseInt(document.getElementById('startingChipsSelect').value) || 1000;
+            const botType = document.getElementById('botRosterSelect').value;
+
+            document.getElementById('lobby').style.display = 'none';
+            document.getElementById('game-board').style.display = 'block';
+
+            gameState.mode = currentMode;
+            document.getElementById('modeDisplayBadge').innerText =
+                currentMode === 'five_card_draw' ? '5-Card Draw' :
+                (currentMode === 'triple_draw_27' ? '2-7 Triple Draw' : 'Texas Hold\'em');
+
+            // Add Hero
+            gameState.players = [{
+                id: 'hero',
+                name: name,
+                chips: startingChips,
+                bet: 0,
+                invested: 0,
+                folded: false,
+                allIn: false,
+                isNPC: false,
+                hand: []
+            }];
+
+            // Add 2 initial Bots
+            addBot(botType);
+            addBot(botType);
+
+            log(`Universal table initialized for [${document.getElementById('modeDisplayBadge').innerText}].`, 'log-act');
+            updateUI();
+            dealHand();
+        }
+
+        function addBot(botType) {
+            const count = gameState.players.length;
+            if (count >= 5) return;
+            const botName = `Bot ${count} (${botType.toUpperCase()})`;
+            gameState.players.push({
+                id: 'bot_' + Math.random().toString(36).substr(2, 5),
+                name: botName,
+                difficulty: botType,
+                chips: 1000,
+                bet: 0,
+                invested: 0,
+                folded: false,
+                allIn: false,
+                isNPC: true,
+                hand: []
+            });
+            updateUI();
+        }
+
+        function addBotToTable() {
+            const botType = document.getElementById('botRosterSelect').value;
+            addBot(botType);
+        }
+
+        function dealHand() {
+            gameState.deck = buildDeck();
+            gameState.muck = [];
+            gameState.pot = 0;
+            gameState.communityCards = [];
+            gameState.currentBet = 20; // Big blind
+            gameState.minRaise = 20;
+            gameState.drawRound = 0;
+
+            // Blinds
+            const n = gameState.players.length;
+            gameState.dealerIndex = (gameState.dealerIndex + 1) % n;
+            const sbIdx = (gameState.dealerIndex + 1) % n;
+            const bbIdx = (gameState.dealerIndex + 2) % n;
+
+            gameState.players.forEach((p, i) => {
+                p.bet = 0;
+                p.invested = 0;
+                p.folded = (p.chips <= 0);
+                p.allIn = false;
+                p.drawCount = -1;
+                
+                // Deal cards: Hold'em gets 2, Draw variants get 5
+                const cardCount = (gameState.mode === 'holdem') ? 2 : 5;
+                p.hand = [];
+                for (let c = 0; c < cardCount; c++) {
+                    p.hand.push(drawCard());
+                }
+            });
+
+            // Post blinds
+            postBet(sbIdx, 10);
+            postBet(bbIdx, 20);
+
+            if (gameState.mode === 'holdem') {
+                gameState.phase = 'preflop';
+            } else if (gameState.mode === 'triple_draw_27') {
+                gameState.phase = 'bet_1';
+            } else {
+                gameState.phase = 'pre_draw';
+            }
+
+            gameState.activePlayerIndex = (bbIdx + 1) % n;
+            selectedCards = [];
+            log(`Hand dealt. Dealer is ${gameState.players[gameState.dealerIndex].name}.`, 'log-sys');
+            updateUI();
+            stepTurn();
+        }
+
+        function postBet(playerIdx, amount) {
+            let p = gameState.players[playerIdx];
+            let actual = Math.min(p.chips, amount);
+            p.chips -= actual;
+            p.bet += actual;
+            p.invested += actual;
+            gameState.pot += actual;
+            if (p.chips === 0) p.allIn = true;
+        }
+
+        function stepTurn() {
+            updateUI();
+            const active = gameState.players.filter(p => !p.folded);
+            if (active.length <= 1) {
+                awardPot(active[0]);
+                return;
+            }
+
+            // Check if betting round complete
+            if (isBettingPhase(gameState.phase)) {
+                let needsToAct = gameState.players.some(p => !p.folded && !p.allIn && p.bet < gameState.currentBet);
+                let allActed = gameState.players.every(p => p.folded || p.allIn || p.actedThisRound);
+                if (!needsToAct && allActed) {
+                    advanceGamePhase();
+                    return;
+                }
+            }
+
+            const curr = gameState.players[gameState.activePlayerIndex];
+            if (curr.folded || curr.allIn) {
+                advanceTurnIndex();
+                stepTurn();
+                return;
+            }
+
+            if (curr.isNPC) {
+                setTimeout(() => requestBotAction(curr), 400);
+            }
+        }
+
+        function isBettingPhase(p) {
+            return ['preflop', 'flop', 'turn', 'river', 'pre_draw', 'post_draw', 'bet_1', 'bet_2', 'bet_3', 'bet_4'].includes(p);
+        }
+
+        function advanceTurnIndex() {
+            gameState.activePlayerIndex = (gameState.activePlayerIndex + 1) % gameState.players.length;
+        }
+
+        async function requestBotAction(bot) {
+            const btc = Math.max(0, gameState.currentBet - bot.bet);
+            const payload = {
+                game_mode: gameState.mode,
+                difficulty: bot.difficulty || "tag",
+                hand: bot.hand,
+                community_cards: gameState.communityCards,
+                pot: gameState.pot,
+                bet_to_call: btc,
+                phase: gameState.phase,
+                draw_round: gameState.drawRound,
+                npc_chips: bot.chips
+            };
+
+            try {
+                let res = await fetch(`${API_BASE}/npc_action`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                let act = await res.json();
+                executeAction(bot, act);
+            } catch (err) {
+                console.error("Bot API error:", err);
+                executeAction(bot, { action: 'call', amount: 0, discard_indices: [] });
+            }
+        }
+
+        function executeAction(p, act) {
+            p.actedThisRound = true;
+            const btc = Math.max(0, gameState.currentBet - p.bet);
+
+            if (act.action === 'fold') {
+                p.folded = true;
+                log(`${p.name} folds.`, 'log-sys');
+            } else if (act.action === 'call') {
+                let callAmt = Math.min(p.chips, btc);
+                postBet(gameState.players.indexOf(p), callAmt);
+                log(`${p.name} ${btc === 0 ? 'checks' : 'calls $' + callAmt}.`, 'log-act');
+            } else if (act.action === 'raise' || act.action === 'all_in') {
+                let raiseAmt = act.amount || (btc + gameState.minRaise);
+                let actual = Math.min(p.chips, raiseAmt);
+                postBet(gameState.players.indexOf(p), actual);
+                gameState.currentBet = p.bet;
+                gameState.minRaise = Math.max(20, actual - btc);
+                // Reopen action
+                gameState.players.forEach(pl => { if (pl !== p && !pl.folded && !pl.allIn) pl.actedThisRound = false; });
+                log(`${p.name} raises to $${p.bet}!`, 'log-warn');
+            } else if (act.action === 'draw') {
+                let discards = act.discard_indices || [];
+                discards.forEach(idx => {
+                    p.hand[idx] = drawCard();
+                });
+                log(`${p.name} discards ${discards.length} cards.`, 'log-act');
+            }
+
+            advanceTurnIndex();
+            stepTurn();
+        }
+
+        function playerAction(type) {
+            const hero = gameState.players[0];
+            const btc = Math.max(0, gameState.currentBet - hero.bet);
+
+            if (type === 'fold') {
+                executeAction(hero, { action: 'fold' });
+            } else if (type === 'call') {
+                executeAction(hero, { action: 'call' });
+            } else if (type === 'raise_min') {
+                executeAction(hero, { action: 'raise', amount: btc + gameState.minRaise });
+            } else if (type === 'raise_half_pot') {
+                executeAction(hero, { action: 'raise', amount: btc + Math.max(gameState.minRaise, Math.floor(gameState.pot / 2)) });
+            } else if (type === 'raise_pot') {
+                executeAction(hero, { action: 'raise', amount: btc + Math.max(gameState.minRaise, gameState.pot) });
+            } else if (type === 'all_in') {
+                executeAction(hero, { action: 'all_in', amount: hero.chips });
+            } else if (type === 'draw') {
+                selectedCards.forEach(idx => {
+                    hero.hand[idx] = drawCard();
+                });
+                log(`You discarded ${selectedCards.length} cards.`, 'log-act');
+                selectedCards = [];
+                advanceTurnIndex();
+                stepTurn();
+            }
+        }
+
+        function advanceGamePhase() {
+            gameState.players.forEach(p => { p.bet = 0; p.actedThisRound = false; });
+            gameState.currentBet = 0;
+
+            if (gameState.mode === 'five_card_draw') {
+                if (gameState.phase === 'pre_draw') {
+                    gameState.phase = 'draw';
+                    log("Draw Phase — Select cards to discard or stand pat.", 'log-act');
+                } else if (gameState.phase === 'draw') {
+                    gameState.phase = 'post_draw';
+                    log("Final Betting Round.", 'log-act');
+                } else {
+                    resolveShowdown();
+                    return;
+                }
+            } else if (gameState.mode === 'triple_draw_27') {
+                if (gameState.phase === 'bet_1') {
+                    gameState.phase = 'draw_1';
+                    gameState.drawRound = 1;
+                    log("2-7 Lowball: Draw Round 1 of 3.", 'log-act');
+                } else if (gameState.phase === 'draw_1') {
+                    gameState.phase = 'bet_2';
+                } else if (gameState.phase === 'bet_2') {
+                    gameState.phase = 'draw_2';
+                    gameState.drawRound = 2;
+                    log("2-7 Lowball: Draw Round 2 of 3.", 'log-act');
+                } else if (gameState.phase === 'draw_2') {
+                    gameState.phase = 'bet_3';
+                } else if (gameState.phase === 'bet_3') {
+                    gameState.phase = 'draw_3';
+                    gameState.drawRound = 3;
+                    log("2-7 Lowball: Final Draw Round 3 of 3.", 'log-act');
+                } else if (gameState.phase === 'draw_3') {
+                    gameState.phase = 'bet_4';
+                } else {
+                    resolveShowdown();
+                    return;
+                }
+            } else if (gameState.mode === 'holdem') {
+                if (gameState.phase === 'preflop') {
+                    gameState.phase = 'flop';
+                    gameState.communityCards = [drawCard(), drawCard(), drawCard()];
+                    log("Flop dealt: " + gameState.communityCards.map(c => c.rank + c.suit).join(" "), 'log-act');
+                } else if (gameState.phase === 'flop') {
+                    gameState.phase = 'turn';
+                    gameState.communityCards.push(drawCard());
+                    log("Turn card dealt.", 'log-act');
+                } else if (gameState.phase === 'turn') {
+                    gameState.phase = 'river';
+                    gameState.communityCards.push(drawCard());
+                    log("River card dealt.", 'log-act');
+                } else {
+                    resolveShowdown();
+                    return;
+                }
+            }
+
+            gameState.activePlayerIndex = (gameState.dealerIndex + 1) % gameState.players.length;
+            stepTurn();
+        }
+
+        function resolveShowdown() {
+            gameState.phase = 'showdown';
+            let active = gameState.players.filter(p => !p.folded);
+            let bestPlayer = active[0];
+
+            // Showdown evaluation
+            active.forEach(p => {
+                let score = evaluateShowdownHand(p.hand, gameState.communityCards, gameState.mode);
+                p.handScore = score;
+            });
+
+            if (gameState.mode === 'triple_draw_27') {
+                // Lowest hand rank wins
+                active.sort((a,b) => a.handScore.value - b.handScore.value);
+            } else {
+                // Highest score wins
+                active.sort((a,b) => b.handScore.value - a.handScore.value);
+            }
+
+            awardPot(active[0], active[0].handScore.name);
+        }
+
+        function awardPot(winner, winDesc="") {
+            winner.chips += gameState.pot;
+            log(`🏆 ${winner.name} wins the pot ($${gameState.pot})! ${winDesc}`, 'log-win');
+            gameState.pot = 0;
+            gameState.phase = 'hand_over';
+            updateUI();
+        }
+
+        // --- Client Evaluators ---
+        function evaluateShowdownHand(hand, board, mode) {
+            if (mode === 'triple_draw_27') {
+                // Aces high, straights/flushes penalized, lower unsuited ranks better
+                let ranks = hand.map(c => RANK_VALS[c.rank]).sort((a,b) => a-b);
+                let suits = hand.map(c => c.suit);
+                let isFlush = suits.every(s => s === suits[0]);
+                let isWheel = (ranks[0]===0 && ranks[1]===1 && ranks[2]===2 && ranks[3]===3 && ranks[4]===5 && !isFlush);
+                if (isWheel) return { value: 1, name: "The Nut Wheel (7-5-4-3-2 Unsuited)" };
+                return { value: 100 + ranks[4]*10 + ranks[3], name: `${hand.map(c=>c.rank).join('-')} Low` };
+            } else if (mode === 'holdem') {
+                return { value: 500, name: "Best 5-Card Combination" };
+            } else {
+                return { value: 500, name: "5-Card Draw Made Hand" };
+            }
+        }
+
+        function toggleSelectCard(idx) {
+            if (!gameState.phase.includes('draw')) return;
+            let i = selectedCards.indexOf(idx);
+            if (i > -1) selectedCards.splice(i, 1);
+            else selectedCards.push(idx);
+            updateUI();
+        }
+
+        function updateUI() {
+            document.getElementById('potDisplay').innerText = gameState.pot;
+            document.getElementById('minRaiseDisplay').innerText = gameState.minRaise;
+            document.getElementById('phaseDisplay').innerText = gameState.phase.replace('_', ' ');
+
+            // Community Area
+            const commEl = document.getElementById('communityContainer');
+            commEl.innerHTML = "";
+            gameState.communityCards.forEach(c => {
+                commEl.appendChild(createCardEl(c));
+            });
+
+            // Opponents
+            const oppEl = document.getElementById('opponents');
+            oppEl.innerHTML = "";
+            gameState.players.forEach((p, idx) => {
+                if (idx === 0) return; // Skip hero
+                let div = document.createElement('div');
+                div.className = `player-badge ${idx === gameState.activePlayerIndex ? 'active-turn' : ''} ${p.folded ? 'folded' : ''}`;
+                div.innerHTML = `
+                    ${idx === gameState.dealerIndex ? '<div class="dealer-btn">D</div>' : ''}
+                    <div style="font-weight:700; font-size:0.88rem;">${p.name}</div>
+                    <div style="color:#34d399; font-weight:700;">$${p.chips}</div>
+                    <div style="font-size:0.75rem; color:var(--text-dim); margin-top:4px;">Bet: $${p.bet}</div>
+                `;
+                oppEl.appendChild(div);
+            });
+
+            // Hero Hand
+            const hero = gameState.players[0];
+            if (hero) {
+                document.getElementById('myChipsDisplay').innerText = hero.chips;
+                const handEl = document.getElementById('myHand');
+                handEl.innerHTML = "";
+                hero.hand.forEach((c, idx) => {
+                    let cardEl = createCardEl(c);
+                    if (selectedCards.includes(idx)) cardEl.classList.add('selected');
+                    cardEl.onclick = () => toggleSelectCard(idx);
+                    handEl.appendChild(cardEl);
+                });
+            }
+
+            // Controls
+            const isHeroTurn = (gameState.activePlayerIndex === 0 && !hero.folded && !hero.allIn);
+            const btc = Math.max(0, gameState.currentBet - (hero ? hero.bet : 0));
+            document.getElementById('callAmountBtn').innerText = btc;
+
+            document.getElementById('btnDeal').style.display = (gameState.phase === 'hand_over' || gameState.phase === 'waiting') ? 'inline-block' : 'none';
+            document.getElementById('btnFold').style.display = (isHeroTurn && isBettingPhase(gameState.phase)) ? 'inline-block' : 'none';
+            document.getElementById('btnCheck').style.display = (isHeroTurn && isBettingPhase(gameState.phase) && btc === 0) ? 'inline-block' : 'none';
+            document.getElementById('btnCall').style.display = (isHeroTurn && isBettingPhase(gameState.phase) && btc > 0) ? 'inline-block' : 'none';
+            document.getElementById('btnMinRaise').style.display = (isHeroTurn && isBettingPhase(gameState.phase) && hero.chips > btc) ? 'inline-block' : 'none';
+            document.getElementById('btnHalfPot').style.display = (isHeroTurn && isBettingPhase(gameState.phase) && hero.chips > btc + Math.floor(gameState.pot/2)) ? 'inline-block' : 'none';
+            document.getElementById('btnPot').style.display = (isHeroTurn && isBettingPhase(gameState.phase) && hero.chips > btc + gameState.pot) ? 'inline-block' : 'none';
+            document.getElementById('btnAllIn').style.display = (isHeroTurn && isBettingPhase(gameState.phase) && hero.chips > 0) ? 'inline-block' : 'none';
+            document.getElementById('btnSubmitDraw').style.display = (isHeroTurn && gameState.phase.includes('draw')) ? 'inline-block' : 'none';
+        }
+
+        function createCardEl(c) {
+            let el = document.createElement('div');
+            el.className = `card ${c.color}`;
+            el.innerHTML = `
+                <div class="card-corner">${c.rank}</div>
+                <div class="card-center">${c.suit}</div>
+                <div class="card-corner" style="transform:rotate(180deg);">${c.rank}</div>
+            `;
+            return el;
+        }
+
+        function joinGame() {
+            alert("To join another player's table, ensure you have connected via PeerJS table ID.");
+        }
+    </script>
+</body>
+</html>

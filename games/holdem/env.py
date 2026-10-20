@@ -75,6 +75,7 @@ class HoldemPokerEnv:
         max_hands_per_session: int = 150,
         blind_escalation_interval: int = 15,
         rng: Optional[np.random.Generator] = None,
+        rng_seed: Optional[int] = None,
     ):
         self.num_seats = num_seats
         self.starting_chips = starting_chips
@@ -84,7 +85,10 @@ class HoldemPokerEnv:
         self.base_big_blind = big_blind
         self.max_hands_per_session = max_hands_per_session
         self.blind_escalation_interval = blind_escalation_interval
-        self.rng = rng or np.random.default_rng()
+        if rng is None and rng_seed is not None:
+            self.rng = np.random.default_rng(rng_seed)
+        else:
+            self.rng = rng or np.random.default_rng()
 
         self.deck = Deck(rng=self.rng)
         self.seats: List[HoldemPlayer] = [

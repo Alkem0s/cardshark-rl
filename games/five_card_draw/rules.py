@@ -14,9 +14,10 @@ Hand categories (highest -> lowest):
 """
 
 from __future__ import annotations
+import numpy as np
 from collections import Counter
-from typing import List, Tuple
-from core.card import rank_of, suit_of
+from typing import List, Tuple, Optional
+from core.card import rank_of, suit_of, card_str, hand_str, Deck, RANK_NAMES, SUIT_NAMES
 
 
 def _rank_counts(ranks: List[int]) -> Counter:
@@ -130,5 +131,44 @@ def get_pairs_info(cards: List[int]) -> dict:
     }
 
 
+def has_flush_draw(cards: List[int]) -> Tuple[bool, Optional[int]]:
+    suits = [suit_of(c) for c in cards]
+    sc = Counter(suits)
+    for s, cnt in sc.items():
+        if cnt == 4:
+            return True, s
+    return False, None
+
+
+def has_straight_draw(cards: List[int]) -> Tuple[bool, List[int]]:
+    ranks = [rank_of(c) for c in cards]
+    from itertools import combinations
+    for combo_idx in combinations(range(5), 4):
+        sub_ranks = sorted([ranks[i] for i in combo_idx])
+        if len(set(sub_ranks)) < 4:
+            continue
+        span = sub_ranks[-1] - sub_ranks[0]
+        if span <= 4 and len(set(sub_ranks)) == 4:
+            return True, list(combo_idx)
+    if 12 in ranks:
+        low_ranks = [r for r in ranks if r <= 3]
+        if len(low_ranks) >= 3:
+            keep = [i for i in range(5) if rank_of(cards[i]) == 12 or rank_of(cards[i]) <= 3]
+            if len(keep) >= 4:
+                return True, keep[:4]
+    return False, []
+
+
+def normalize_rank(card: int) -> float:
+    return rank_of(card) / 12.0
+
+
+def normalize_suit(card: int) -> float:
+    return suit_of(card) / 3.0
+
+
 def normalize_hand_score(score: int) -> float:
     return min(score / 9_000_000, 1.0)
+
+
+format_hand = hand_str

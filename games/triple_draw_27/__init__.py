@@ -23,7 +23,10 @@ from games.triple_draw_27.env import (
     TOTAL_ACTIONS,
 )
 from games.triple_draw_27.discard_masker import get_legal_discard_mask_27
-from games.triple_draw_27.gym_wrapper import TripleDrawPokerGymEnv, build_observation_vector_27, OBS_DIM_27
+try:
+    from games.triple_draw_27.gym_wrapper import TripleDrawPokerGymEnv, build_observation_vector_27, OBS_DIM_27
+except ImportError:
+    pass
 
 __all__ = [
     "evaluate_27_hand",

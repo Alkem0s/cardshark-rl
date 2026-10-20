@@ -17,29 +17,42 @@ import numpy as np
 from typing import Dict, List, Optional, Tuple, Any
 
 try:
-    from game.card_utils import (
+    from games.five_card_draw.rules import (
         normalize_rank, normalize_suit, normalize_hand_score,
         hand_category, evaluate_hand
     )
-    from game.multi_draw_poker_env import (
+    from games.five_card_draw.env import (
         MultiDrawPokerEnv, TOTAL_ACTIONS,
         A_FOLD, A_CALL, A_MIN_RAISE, A_HALF_POT, A_POT, A_ALL_IN, A_DRAW_START,
         PHASE_PRE_DRAW, PHASE_DRAW, PHASE_POST_DRAW, PHASE_SHOWDOWN
     )
-    from game.multi_opponents import MultiPlayerOpponent, make_random_archetype, make_opponent_by_id
+    from games.five_card_draw.opponents import MultiPlayerOpponent, make_random_archetype, make_opponent_by_id
     from rl.opponent_tracker import TableOpponentTracker
 except ImportError:
-    from card_utils import (
-        normalize_rank, normalize_suit, normalize_hand_score,
-        hand_category, evaluate_hand
-    )
-    from multi_draw_poker_env import (
-        MultiDrawPokerEnv, TOTAL_ACTIONS,
-        A_FOLD, A_CALL, A_MIN_RAISE, A_HALF_POT, A_POT, A_ALL_IN, A_DRAW_START,
-        PHASE_PRE_DRAW, PHASE_DRAW, PHASE_POST_DRAW, PHASE_SHOWDOWN
-    )
-    from multi_opponents import MultiPlayerOpponent, make_random_archetype, make_opponent_by_id
-    from opponent_tracker import TableOpponentTracker
+    try:
+        from game.card_utils import (
+            normalize_rank, normalize_suit, normalize_hand_score,
+            hand_category, evaluate_hand
+        )
+        from game.multi_draw_poker_env import (
+            MultiDrawPokerEnv, TOTAL_ACTIONS,
+            A_FOLD, A_CALL, A_MIN_RAISE, A_HALF_POT, A_POT, A_ALL_IN, A_DRAW_START,
+            PHASE_PRE_DRAW, PHASE_DRAW, PHASE_POST_DRAW, PHASE_SHOWDOWN
+        )
+        from game.multi_opponents import MultiPlayerOpponent, make_random_archetype, make_opponent_by_id
+        from rl.opponent_tracker import TableOpponentTracker
+    except ImportError:
+        from card_utils import (
+            normalize_rank, normalize_suit, normalize_hand_score,
+            hand_category, evaluate_hand
+        )
+        from multi_draw_poker_env import (
+            MultiDrawPokerEnv, TOTAL_ACTIONS,
+            A_FOLD, A_CALL, A_MIN_RAISE, A_HALF_POT, A_POT, A_ALL_IN, A_DRAW_START,
+            PHASE_PRE_DRAW, PHASE_DRAW, PHASE_POST_DRAW, PHASE_SHOWDOWN
+        )
+        from multi_opponents import MultiPlayerOpponent, make_random_archetype, make_opponent_by_id
+        from opponent_tracker import TableOpponentTracker
 
 from enum import IntEnum
 

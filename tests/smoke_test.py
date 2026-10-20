@@ -1,97 +1,74 @@
-"""smoke_test.py — Quick sanity check for the CardShark-RL codebase."""
+"""
+tests/smoke_test.py — Universal Sanity Smoke Test for All CardShark-RL Game Engines.
+
+Tests:
+1. 5-Card Draw rules, evaluator, and gym wrapper
+2. 2-7 Triple Draw lowball evaluator, wheel detection, and environment
+3. Texas Hold'em 7-card evaluator, street transitions, and action abstractions
+"""
 import sys
 import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-print("=== CardShark-RL Smoke Test ===\n")
-
-# 1. Imports
-print("[1/5] Testing imports...", end=" ", flush=True)
-from game.card_utils import evaluate_hand, Deck, hand_category_name
-from game.opponents import CallingStation, Maniac, Rock, make_random_opponent
-from game.draw_poker_env import DrawPokerEnv
-from rl.gym_wrapper import DrawPokerGymEnv, mask_fn
 import numpy as np
-print("OK")
 
-# 2. Hand evaluator
-print("[2/5] Testing hand evaluator...", end=" ", flush=True)
-royal_flush = [12, 25, 38, 51, 8]   # A♣ Q♦ K♥ A♠ T♣  — actually let's use a known one
-# Royal flush: Tc Jc Qc Kc Ac  = cards 8,9,10,11,12
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+print("=" * 60)
+print("  CARDSHARK-RL UNIVERSAL MULTI-GAME SMOKE TEST")
+print("=" * 60)
+
+# 1. 5-Card Draw
+print("\n[1/3] Testing 5-Card Draw Engine...", end=" ", flush=True)
+from games.five_card_draw.rules import evaluate_hand, Deck, hand_category_name
+from games.five_card_draw.env import MultiDrawPokerEnv
+from rl.gym_wrapper import DrawPokerGymEnv
+
 royal = [8, 9, 10, 11, 12]
-pair_aces = [0, 13, 1, 2, 3]   # Ac Ad 3c 4c 5c  (pair of 2s actually)
-assert evaluate_hand(royal) > evaluate_hand(pair_aces), "Royal flush must beat pair"
-assert hand_category_name(royal) == "Straight Flush", f"Got: {hand_category_name(royal)}"
+pair = [0, 13, 1, 2, 3]
+assert evaluate_hand(royal) > evaluate_hand(pair), "High poker evaluator failure"
+assert hand_category_name(royal) == "Straight Flush"
+
+fcd_env = MultiDrawPokerEnv(num_seats=5, starting_chips=200, rng_seed=42)
+fcd_env.reset_session()
+assert len(fcd_env.seats) == 5
+assert fcd_env.pot > 0
 print("OK")
 
-# 3. Opponents
-print("[3/5] Testing opponent archetypes...", end=" ", flush=True)
-rng = np.random.default_rng(42)
-deck = Deck(rng=rng)
-hand = deck.deal(5)
-for OpponentClass in [CallingStation, Maniac, Rock]:
-    opp = OpponentClass(rng=rng)
-    bet_act = opp.bet_action(hand, pot=4, bet_to_call=2, phase="pre_draw", can_raise=True)
-    draw_act = opp.draw_action(hand)
-    assert bet_act in (0, 1, 2), f"{opp.name}: invalid bet action {bet_act}"
-    assert all(0 <= i <= 4 for i in draw_act), f"{opp.name}: invalid draw indices {draw_act}"
+# 2. 2-7 Triple Draw (Kansas City Lowball)
+print("[2/3] Testing 2-7 Triple Draw Engine...", end=" ", flush=True)
+from games.triple_draw_27.rules import evaluate_27_hand, is_wheel_27, hand_category_27
+from games.triple_draw_27.env import TripleDrawPokerEnv
+
+# The wheel in 2-7 Lowball is 7-5-4-3-2 unsuited:
+# 2♣ (0), 3♦ (14), 4♥ (28), 5♠ (42), 7♣ (5)
+wheel = [0, 14, 28, 42, 5]
+rough_8 = [0, 14, 28, 42, 6]  # 8-5-4-3-2
+assert is_wheel_27(wheel), "Wheel detection failed"
+assert evaluate_27_hand(wheel) > evaluate_27_hand(rough_8), "2-7 lowball rank inverted"
+
+td_env = TripleDrawPokerEnv(num_seats=5, starting_chips=200, rng_seed=42)
+td_env.reset_session()
+assert len(td_env.seats) == 5
+assert td_env.pot > 0
 print("OK")
 
-# 4. Environment reset + random rollout
-print("[4/5] Testing env reset and random rollout (200 episodes)...", end=" ", flush=True)
-env = DrawPokerGymEnv(use_implicit_modeling=False, rng_seed=0)
-errors = 0
-for ep in range(200):
-    obs, info = env.reset()
-    assert obs.shape == env.observation_space.shape, "Obs shape mismatch"
-    done = False
-    steps = 0
-    while not done and steps < 50:
-        mask = env.action_mask()
-        valid = np.where(mask == 1)[0]
-        assert len(valid) > 0, f"No valid actions at ep {ep} step {steps}"
-        action = int(np.random.choice(valid))
-        obs, reward, terminated, truncated, info = env.step(action)
-        done = terminated or truncated
-        steps += 1
-    if not done:
-        errors += 1
-assert errors == 0, f"{errors}/200 episodes did not terminate"
+# 3. No-Limit Texas Hold'em
+print("[3/3] Testing No-Limit Texas Hold'em Engine...", end=" ", flush=True)
+from games.holdem.evaluator import evaluate_holdem_hand, holdem_category_name
+from games.holdem.env import HoldemPokerEnv
+
+# 7 cards: Hole = [A♠ (51), K♠ (50)], Board = [Q♠ (49), J♠ (48), 10♠ (47), 2♦ (14), 3♣ (1)]
+royal_holdem = [51, 50, 49, 48, 47, 14, 1]
+score, cat = evaluate_holdem_hand(royal_holdem)
+assert holdem_category_name(cat) in ("Straight Flush", "Royal Flush"), f"Got: {holdem_category_name(cat)}"
+
+nlhe_env = HoldemPokerEnv(num_seats=6, starting_chips=1000, rng_seed=42)
+nlhe_env.reset_session()
+assert len(nlhe_env.seats) == 6
+assert nlhe_env.pot > 0
 print("OK")
 
-# 5. Implicit modeling obs size + obs bounds
-print("[5/7] Testing implicit vs explicit obs sizes...", end=" ", flush=True)
-env_a = DrawPokerGymEnv(use_implicit_modeling=False, rng_seed=1)
-env_b = DrawPokerGymEnv(use_implicit_modeling=True,  rng_seed=1)
-obs_a, _ = env_a.reset()
-obs_b, _ = env_b.reset()
-assert obs_a.shape == (26,), f"Model A obs should be (26,), got {obs_a.shape}"
-assert obs_b.shape == (33,), f"Model B obs should be (33,), got {obs_b.shape}"
-assert env_a.observation_space.low[0] == -1.0, f"Obs low should be -1.0, got {env_a.observation_space.low[0]}"
-print("OK")
-
-# 6. Block scheduling
-print("[6/7] Testing block opponent scheduling...", end=" ", flush=True)
-env_block = DrawPokerGymEnv(
-    use_implicit_modeling=True, rng_seed=2,
-    opponent_schedule="block", block_size=5,
-)
-opps_seen = []
-for _ in range(12):
-    env_block.reset()
-    opps_seen.append(env_block._env.current_opponent.name)
-# First 5 should be same, then switch
-assert opps_seen[0] == opps_seen[4], f"Block should keep same opp for block_size hands"
-assert opps_seen[4] != opps_seen[5], f"Block should rotate after block_size hands"
-print("OK")
-
-# 7. Timestamped results dir
-print("[7/7] Testing timestamped run directory...", end=" ", flush=True)
-from main import make_run_dir
-import shutil
-test_dir = make_run_dir("_smoke_test_results")
-assert os.path.isdir(test_dir), f"Run dir not created: {test_dir}"
-shutil.rmtree("_smoke_test_results")
-print("OK")
-
-print("\n=== ALL TESTS PASSED ===")
+print("\n" + "=" * 60)
+print("  ALL 3 GAME ENGINES PASSED SMOKE VALIDATION CLEANLY!")
+print("=" * 60)

@@ -13,21 +13,30 @@ from gymnasium import spaces
 from typing import Optional, Tuple
 
 try:
-    from game.draw_poker_env import (
+    from games.five_card_draw.heads_up_env import (
         DrawPokerEnv, TOTAL_ACTIONS, PHASE_SHOWDOWN,
         A_FOLD, A_CALL, A_RAISE, A_DRAW_START, A_DRAW_END,
         PHASE_PRE_DRAW, PHASE_POST_DRAW,
     )
-    from game.opponents import NUM_ARCHETYPES
-    from game.card_utils import hand_category
+    from games.five_card_draw.opponents import NUM_ARCHETYPES
+    from games.five_card_draw.rules import hand_category
 except ImportError:
-    from draw_poker_env import (
-        DrawPokerEnv, TOTAL_ACTIONS, PHASE_SHOWDOWN,
-        A_FOLD, A_CALL, A_RAISE, A_DRAW_START, A_DRAW_END,
-        PHASE_PRE_DRAW, PHASE_POST_DRAW,
-    )
-    from opponents import NUM_ARCHETYPES
-    from card_utils import hand_category
+    try:
+        from game.draw_poker_env import (
+            DrawPokerEnv, TOTAL_ACTIONS, PHASE_SHOWDOWN,
+            A_FOLD, A_CALL, A_RAISE, A_DRAW_START, A_DRAW_END,
+            PHASE_PRE_DRAW, PHASE_POST_DRAW,
+        )
+        from game.opponents import NUM_ARCHETYPES
+        from game.card_utils import hand_category
+    except ImportError:
+        from draw_poker_env import (
+            DrawPokerEnv, TOTAL_ACTIONS, PHASE_SHOWDOWN,
+            A_FOLD, A_CALL, A_RAISE, A_DRAW_START, A_DRAW_END,
+            PHASE_PRE_DRAW, PHASE_POST_DRAW,
+        )
+        from opponents import NUM_ARCHETYPES
+        from card_utils import hand_category
 
 
 class DrawPokerGymEnv(gym.Env):

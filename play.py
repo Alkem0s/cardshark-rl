@@ -17,11 +17,12 @@ PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from game.server import run_server
+from games.server import run_server
 
 def main():
-    parser = argparse.ArgumentParser(description="Launch CardShark-RL Playable Game")
+    parser = argparse.ArgumentParser(description="Launch CardShark-RL Universal Poker Lounge")
     parser.add_argument("--port", type=int, default=5000, help="Web server port (default: 5000)")
+    parser.add_argument("--game", "-g", type=str, default="five_card_draw", help="Initial game mode (five_card_draw, triple_draw_27, holdem)")
     parser.add_argument("--no-browser", action="store_true", help="Do not automatically open web browser")
     args = parser.parse_args()
 

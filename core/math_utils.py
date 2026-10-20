@@ -79,6 +79,9 @@ def calculate_bb_per_100(net_chips: float, big_blind: float, total_hands: int) -
 
 # Re-export side-pot calculation utilities
 try:
-    from game.side_pot import calculate_side_pots, resolve_showdown_payouts, PotTier
+    from games.five_card_draw.side_pot import calculate_side_pots, resolve_showdown_payouts, PotTier
 except ImportError:
-    pass
+    try:
+        from game.side_pot import calculate_side_pots, resolve_showdown_payouts, PotTier
+    except ImportError:
+        pass

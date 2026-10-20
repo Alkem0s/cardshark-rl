@@ -22,7 +22,10 @@ from typing import Dict, List, Set, Tuple, Optional
 
 from core.card import Deck, rank_of, suit_of
 from games.triple_draw_27.rules import evaluate_27_hand, hand_category_27, is_wheel_27
-from game.side_pot import calculate_side_pots, resolve_showdown_payouts, PotTier
+try:
+    from games.five_card_draw.side_pot import calculate_side_pots, resolve_showdown_payouts, PotTier
+except ImportError:
+    from game.side_pot import calculate_side_pots, resolve_showdown_payouts, PotTier
 
 
 # Action constants (Identical 38-dim discrete action space)
@@ -140,6 +143,8 @@ class TripleDrawPokerEnv:
         self.session_done = False
         self.dealer_seat = int(self.rng.integers(0, self.num_seats))
         self.start_hand()
+
+    reset_session = reset_tournament
 
     def start_hand(self):
         alive = self.alive_seats

@@ -24,7 +24,10 @@ from games.holdem.evaluator import (
     holdem_category_name,
 )
 from games.holdem.env import HoldemPokerEnv, HoldemPlayer
-from games.holdem.gym_wrapper import HoldemPokerGymEnv, OBS_DIM_HOLDEM
+try:
+    from games.holdem.gym_wrapper import HoldemPokerGymEnv, OBS_DIM_HOLDEM
+except ImportError:
+    pass
 from games.holdem.opponents import (
     TAGBot,
     LAGBot,

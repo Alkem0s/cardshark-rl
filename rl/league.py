@@ -10,7 +10,10 @@ import os
 from typing import Dict, List, Optional, Any
 import numpy as np
 
-from game.multi_opponents import MultiPlayerOpponent, TAG, make_random_archetype
+try:
+    from games.five_card_draw.opponents import MultiPlayerOpponent, TAG, make_random_archetype
+except ImportError:
+    from game.multi_opponents import MultiPlayerOpponent, TAG, make_random_archetype
 from rl.opponent_tracker import TableOpponentTracker
 
 _MODEL_CACHE: Dict[str, Any] = {}
@@ -51,7 +54,10 @@ class LeagueOpponent(MultiPlayerOpponent):
 
     def get_action_mask(self, env, seat_idx: int) -> np.ndarray:
         """Returns action mask for seat, applying dominated discard action masking if supported."""
-        from game.multi_draw_poker_env import PHASE_DRAW, TOTAL_ACTIONS, A_DRAW_START
+        try:
+            from games.five_card_draw.env import PHASE_DRAW, TOTAL_ACTIONS, A_DRAW_START
+        except ImportError:
+            from game.multi_draw_poker_env import PHASE_DRAW, TOTAL_ACTIONS, A_DRAW_START
         if self.discard_masking and env.phase == PHASE_DRAW:
             from rl.discard_masker import get_legal_discard_mask
             hand = env.seats[seat_idx].hand
@@ -214,7 +220,10 @@ class LeaguePool:
 
         # Dedicated exploiter sparring seat
         if self.exploiter_prob > 0 and roll < self.exploiter_prob:
-            from game.multi_opponents import AdversarialExploiter
+            try:
+                from games.five_card_draw.opponents import AdversarialExploiter
+            except ImportError:
+                from game.multi_opponents import AdversarialExploiter
             return AdversarialExploiter(rng=r)
 
         prob = self.neural_opponent_prob
