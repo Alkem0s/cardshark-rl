@@ -1,0 +1,192 @@
+[
+  {
+    "trial_id": 0,
+    "value": -86.72875,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "fold_penalty": -0.003763796434579126,
+      "elimination_penalty": 24.01428612819832,
+      "win_bonus": 24.6398788362281,
+      "learning_rate": 0.00014658861161892831,
+      "min_lr_ratio": 0.22340279606636548,
+      "clip_range": 0.19091961642353417,
+      "initial_ent_coef": 0.01616167224336399
+    },
+    "user_attrs": {
+      "mean_reward": 29.27,
+      "win_rate": 12.0,
+      "elim_rate": 88.0
+    }
+  },
+  {
+    "trial_id": 1,
+    "value": 36.29124999999999,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "fold_penalty": 0.010985284373248055,
+      "elimination_penalty": 17.022300234864176,
+      "win_bonus": 24.16145155592091,
+      "learning_rate": 8.168332885565803e-05,
+      "min_lr_ratio": 0.3454864778242991,
+      "clip_range": 0.23827098485602952,
+      "initial_ent_coef": 0.019246782213565523
+    },
+    "user_attrs": {
+      "mean_reward": 124.29,
+      "win_rate": 16.0,
+      "elim_rate": 84.0
+    }
+  },
+  {
+    "trial_id": 2,
+    "value": -82.7125,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "fold_penalty": -0.00954525098378698,
+      "elimination_penalty": 8.668090197068675,
+      "win_bonus": 16.084844859190753,
+      "learning_rate": 0.00013602935653566516,
+      "min_lr_ratio": 0.2647917527963174,
+      "clip_range": 0.20038603981386294,
+      "initial_ent_coef": 0.02723705789444759
+    },
+    "user_attrs": {
+      "mean_reward": 5.29,
+      "win_rate": 16.0,
+      "elim_rate": 84.0
+    }
+  },
+  {
+    "trial_id": 3,
+    "value": 17.752499999999998,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "fold_penalty": -0.010815184180438746,
+      "elimination_penalty": 10.842892970704362,
+      "win_bonus": 17.327236865873836,
+      "learning_rate": 0.00012689848631748882,
+      "min_lr_ratio": 0.31777639420895204,
+      "clip_range": 0.19397716475108517,
+      "initial_ent_coef": 0.025284688768272234
+    },
+    "user_attrs": {
+      "mean_reward": 105.75,
+      "win_rate": 16.0,
+      "elim_rate": 84.0
+    }
+  },
+  {
+    "trial_id": 4,
+    "value": 0.2224999999999966,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "fold_penalty": 0.002772437065861274,
+      "elimination_penalty": 5.929008254399955,
+      "win_bonus": 22.150897038028766,
+      "learning_rate": 9.506196989871823e-05,
+      "min_lr_ratio": 0.20975773894779193,
+      "clip_range": 0.24642198760773332,
+      "initial_ent_coef": 0.03431264066149119
+    },
+    "user_attrs": {
+      "mean_reward": 116.22,
+      "win_rate": 12.0,
+      "elim_rate": 88.0
+    }
+  },
+  {
+    "trial_id": 5,
+    "value": 134.67375000000004,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "fold_penalty": 0.009251920443493832,
+      "elimination_penalty": 11.092275383467413,
+      "win_bonus": 11.953442280127678,
+      "learning_rate": 0.0001598438479056223,
+      "min_lr_ratio": 0.26602287406094016,
+      "clip_range": 0.18854267643913453,
+      "initial_ent_coef": 0.024903538202225406
+    },
+    "user_attrs": {
+      "mean_reward": 138.67,
+      "win_rate": 28.0,
+      "elim_rate": 72.0
+    }
+  },
+  {
+    "trial_id": 6,
+    "value": 67.54624999999999,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "fold_penalty": -0.013968344366543447,
+      "elimination_penalty": 23.186408041575643,
+      "win_bonus": 15.175599632000338,
+      "learning_rate": 0.00015637153050673965,
+      "min_lr_ratio": 0.24675666141341165,
+      "clip_range": 0.21640476148244675,
+      "initial_ent_coef": 0.025934205586865593
+    },
+    "user_attrs": {
+      "mean_reward": 119.55,
+      "win_rate": 20.0,
+      "elim_rate": 76.0
+    }
+  },
+  {
+    "trial_id": 7,
+    "value": 207.17375000000004,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "fold_penalty": -0.009454366334234188,
+      "elimination_penalty": 24.391692555291172,
+      "win_bonus": 25.50265646722229,
+      "learning_rate": 0.00020693911518943967,
+      "min_lr_ratio": 0.3342241025641473,
+      "clip_range": 0.22185299851677595,
+      "initial_ent_coef": 0.033437484700462344
+    },
+    "user_attrs": {
+      "mean_reward": 239.17,
+      "win_rate": 24.0,
+      "elim_rate": 76.0
+    }
+  },
+  {
+    "trial_id": 8,
+    "value": 176.35375,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "fold_penalty": -0.012345224938442414,
+      "elimination_penalty": 8.919657248382904,
+      "win_bonus": 10.90454577821076,
+      "learning_rate": 0.00011117784138847012,
+      "min_lr_ratio": 0.2583015934534223,
+      "clip_range": 0.1989944322241727,
+      "initial_ent_coef": 0.03157475018303859
+    },
+    "user_attrs": {
+      "mean_reward": 172.35,
+      "win_rate": 28.0,
+      "elim_rate": 68.0
+    }
+  },
+  {
+    "trial_id": 9,
+    "value": 48.84125,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "fold_penalty": -0.004297400199192322,
+      "elimination_penalty": 10.618690193747614,
+      "win_bonus": 20.853921663164968,
+      "learning_rate": 9.22576963893971e-05,
+      "min_lr_ratio": 0.3203295471131059,
+      "clip_range": 0.18521854505758395,
+      "initial_ent_coef": 0.034737738732010345
+    },
+    "user_attrs": {
+      "mean_reward": 108.84,
+      "win_rate": 20.0,
+      "elim_rate": 80.0
+    }
+  }
+]

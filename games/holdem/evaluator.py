@@ -126,3 +126,66 @@ def holdem_category(cards: List[int]) -> int:
 def holdem_category_name(cards: List[int]) -> str:
     cat = holdem_category(cards)
     return CATEGORY_NAMES[cat]
+
+
+def evaluate_preflop_hand_chen(c1: int, c2: int) -> float:
+    """
+    Computes Bill Chen's preflop hand formula for Texas Hold'em hole cards.
+    Returns normalized equity in [0.0, 1.0].
+    
+    Chen Formula:
+    1. Score highest card:
+       A: 10, K: 8, Q: 7, J: 6, T: 5, 9: 4.5, 8: 4, 7: 3.5, 6: 3, 5: 2.5, 4: 2, 3: 1.5, 2: 1
+    2. If pair, double score with a minimum of 5 (e.g. 22=5, 55=5, AA=20).
+    3. If suited, add 2 points.
+    4. Gaps between ranks:
+       0 gap (connected): add 1 point (if high card < A)
+       1 gap (e.g. Q-T, J-9): -1 point
+       2 gap (e.g. Q-9, J-8): -2 points
+       3 gap (e.g. Q-8, J-7): -4 points
+       >= 4 gap (e.g. K-2, Q-2): -5 points
+    5. Result clamped to [0, 20], normalized to [0.0, 1.0].
+    """
+    CHEN_CARD_SCORES = {
+        12: 10.0,  # Ace
+        11: 8.0,   # King
+        10: 7.0,   # Queen
+        9: 6.0,    # Jack
+        8: 5.0,    # Ten
+        7: 4.5,    # 9
+        6: 4.0,    # 8
+        5: 3.5,    # 7
+        4: 3.0,    # 6
+        3: 2.5,    # 5
+        2: 2.0,    # 4
+        1: 1.5,    # 3
+        0: 1.0,    # 2
+    }
+    r1, r2 = rank_of(c1), rank_of(c2)
+    s1, s2 = suit_of(c1), suit_of(c2)
+    high_r = max(r1, r2)
+    low_r = min(r1, r2)
+    gap = high_r - low_r - 1
+
+    if r1 == r2:
+        score = max(5.0, CHEN_CARD_SCORES[high_r] * 2.0)
+    else:
+        score = CHEN_CARD_SCORES[high_r]
+        if s1 == s2:
+            score += 2.0  # Suited bonus
+        
+        if gap == -1 or gap == 0:  # Connected
+            if high_r < 12:  # bonus for connectedness below Ace
+                score += 1.0
+        elif gap == 1:
+            score -= 1.0
+        elif gap == 2:
+            score -= 2.0
+        elif gap == 3:
+            score -= 4.0
+        else:
+            score -= 5.0
+
+    score = max(0.0, min(20.0, score))
+    return score / 20.0
+

@@ -22,6 +22,7 @@ class CardAttentionExtractor(BaseFeaturesExtractor):
     def __init__(
         self,
         observation_space: spaces.Box,
+        num_cards: int = 5,
         embed_dim: int = 32,
         num_heads: int = 4,
         pooling: str = "attention",
@@ -32,7 +33,7 @@ class CardAttentionExtractor(BaseFeaturesExtractor):
         assert embed_dim % num_heads == 0, f"embed_dim ({embed_dim}) must be divisible by num_heads ({num_heads})"
         assert pooling in ("mean", "max", "attention", "both"), f"Unknown pooling method: {pooling}"
 
-        self.num_cards = 5
+        self.num_cards = num_cards
         self.card_in_dim = 2  # [rank, suit]
         self.embed_dim = embed_dim
         self.num_heads = num_heads

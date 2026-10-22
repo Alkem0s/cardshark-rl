@@ -170,16 +170,20 @@ def run_hpo_f(
     print(f"\n[HPO Complete] Best Score: {best.value:.2f}")
     print(f"Best Hyperparameters: {best.params}")
 
+    merged_params = {}
+    if os.path.exists(output_path):
+        try:
+            with open(output_path, "r", encoding="utf-8") as f:
+                merged_params = json.load(f)
+        except Exception:
+            pass
+    merged_params.update(best.params)
+
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(best.params, f, indent=2)
+        json.dump(merged_params, f, indent=2)
 
-    alt_path = "configs/five_card_draw/best_params_f.json"
-    os.makedirs(os.path.dirname(alt_path), exist_ok=True)
-    with open(alt_path, "w", encoding="utf-8") as f:
-        json.dump(best.params, f, indent=2)
-
-    print(f"Saved optimal parameters to: {output_path} and {alt_path}")
+    print(f"Saved optimal parameters to: {output_path}")
 
 
 if __name__ == "__main__":

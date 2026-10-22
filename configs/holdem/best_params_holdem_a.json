@@ -1,14 +1,20 @@
 {
-  "learning_rate": 0.00011844319751820385,
-  "min_lr_ratio": 0.24014286128198326,
-  "n_restart_cycles": 6,
-  "clip_range": 0.20986584841970365,
-  "initial_ent_coef": 0.008900466011060912,
-  "gamma": 0.9870279287643706,
-  "gae_lambda": 0.903485016730092,
+  "learning_rate": 0.0002236148052476384,
+  "min_lr": 4.9846716105858284e-05,
+  "min_lr_ratio": 0.2229133086722786,
+  "n_restart_cycles": 5,
+  "clip_range": 0.1915617695562586,
+  "initial_ent_coef": 0.020986831532969784,
+  "min_ent_coef": 0.001,
+  "gamma": 0.9920453776790373,
+  "gae_lambda": 0.924283071616075,
   "net_arch": [
+    128,
     128,
     128
   ],
-  "fold_penalty": 0.021235069657748146
+  "batch_size": 128,
+  "n_steps": 1024,
+  "n_epochs": 7,
+  "fold_penalty": 0.025919874517746192
 }

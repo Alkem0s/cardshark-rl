@@ -1,0 +1,26 @@
+{
+  "fold_penalty": -0.017345224938442417,
+  "elimination_penalty": 2.939742936287178,
+  "win_bonus": 0.9045457782107613,
+  "learning_rate": 0.00015031483235651826,
+  "min_lr_ratio": 0.2535129990040384,
+  "min_lr": 3.810676394549021e-05,
+  "clip_range": 0.23287375091519294,
+  "initial_ent_coef": 0.03166031869068446,
+  "min_ent_coef": 0.004899443222417272,
+  "net_arch": [
+    256,
+    256
+  ],
+  "embed_dim": 32,
+  "num_heads": 4,
+  "pooling": "mean",
+  "card_features_dim": 32,
+  "game_features_dim": 64,
+  "gamma": 0.992,
+  "gae_lambda": 0.92,
+  "n_restart_cycles": 6,
+  "n_steps": 1024,
+  "batch_size": 256,
+  "n_epochs": 5
+}

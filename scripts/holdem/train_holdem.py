@@ -123,7 +123,7 @@ class HoldemSessionCallback(BaseCallback):
         return True
 
 
-def make_holdem_env(rank: int, seed: int = 42):
+def make_holdem_env(rank: int, seed: int = 42, fold_penalty: float = 0.02):
     def _init():
         e = HoldemPokerGymEnv(
             num_seats=5,
@@ -134,7 +134,7 @@ def make_holdem_env(rank: int, seed: int = 42):
             max_hands_per_session=150,
             blind_escalation_interval=15,
             randomize_stacks=True,
-            fold_penalty=0.05,
+            fold_penalty=fold_penalty,
             rng_seed=seed + rank * 1000,
         )
         return ActionMasker(e, lambda env: env.action_masks())
@@ -165,6 +165,7 @@ def train_holdem(
     gamma = 0.99
     gae_lambda = 0.95
     clip_range = 0.20
+    fold_penalty = 0.02
     net_arch = [128, 128]
 
     resolved_path = os.path.join(PROJECT_ROOT, params_path) if not os.path.isabs(params_path) else params_path
@@ -173,7 +174,10 @@ def train_holdem(
             with open(resolved_path, "r", encoding="utf-8") as f:
                 params = json.load(f)
             learning_rate = params.get("learning_rate", learning_rate)
-            min_lr = params.get("min_lr", min_lr)
+            if "min_lr" in params:
+                min_lr = params["min_lr"]
+            elif "min_lr_ratio" in params:
+                min_lr = learning_rate * params["min_lr_ratio"]
             n_restart_cycles = params.get("n_restart_cycles", n_restart_cycles)
             initial_ent_coef = params.get("initial_ent_coef", initial_ent_coef)
             min_ent_coef = params.get("min_ent_coef", min_ent_coef)
@@ -183,6 +187,7 @@ def train_holdem(
             gamma = params.get("gamma", gamma)
             gae_lambda = params.get("gae_lambda", gae_lambda)
             clip_range = params.get("clip_range", clip_range)
+            fold_penalty = params.get("fold_penalty", fold_penalty)
             net_arch = params.get("net_arch", net_arch)
             print(f"  [Config] Loaded Hold'em params from: {resolved_path}")
         except Exception as e:
@@ -202,7 +207,7 @@ def train_holdem(
         print(f"  Architecture: MaskableActorCriticPolicy with net_arch={net_arch}")
         print(f"  Environments: {n_envs} | Steps/Env: {effective_n_steps}")
 
-    env = DummyVecEnv([make_holdem_env(i, seed=seed) for i in range(n_envs)])
+    env = DummyVecEnv([make_holdem_env(i, seed=seed, fold_penalty=fold_penalty) for i in range(n_envs)])
 
     lr_schedule = cosine_warm_restart_schedule(
         initial_lr=learning_rate,

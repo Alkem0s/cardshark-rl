@@ -1,0 +1,577 @@
+[
+  {
+    "trial_id": 0,
+    "value": 102.49509246837523,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 64,
+      "num_heads": 2,
+      "pooling": "attention",
+      "card_features_dim": 32,
+      "learning_rate": 0.00018753085909005651,
+      "min_lr_ratio": 0.08349936403028642,
+      "n_restart_cycles": 7,
+      "clip_range": 0.20827098485602952,
+      "initial_ent_coef": 0.014246782213565522,
+      "gamma": 0.9914545997376568,
+      "gae_lambda": 0.9191702254926717,
+      "fold_penalty": 0.03216968971838151
+    },
+    "user_attrs": {
+      "mean_reward": 12.5,
+      "win_rate": 36.0
+    }
+  },
+  {
+    "trial_id": 1,
+    "value": -4.596535847376253,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 32,
+      "num_heads": 4,
+      "pooling": "mean",
+      "card_features_dim": 64,
+      "learning_rate": 8.274032734603531e-05,
+      "min_lr_ratio": 0.16741985453031397,
+      "n_restart_cycles": 6,
+      "clip_range": 0.15325152889039984,
+      "initial_ent_coef": 0.022150897038028763,
+      "gamma": 0.9913641929894983,
+      "gae_lambda": 0.913252579649264,
+      "fold_penalty": 0.05795542149013333
+    },
+    "user_attrs": {
+      "mean_reward": -4.6,
+      "win_rate": 0.0
+    }
+  },
+  {
+    "trial_id": 2,
+    "value": -2.131617609461193,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 32,
+      "num_heads": 2,
+      "pooling": "attention",
+      "card_features_dim": 32,
+      "learning_rate": 0.0002592620410856923,
+      "min_lr_ratio": 0.12399259687200287,
+      "n_restart_cycles": 6,
+      "clip_range": 0.17181977532625875,
+      "initial_ent_coef": 0.020401360423556215,
+      "gamma": 0.9943736822347462,
+      "gae_lambda": 0.9192427227762764,
+      "fold_penalty": 0.05878338511058234
+    },
+    "user_attrs": {
+      "mean_reward": -12.13,
+      "win_rate": 4.0
+    }
+  },
+  {
+    "trial_id": 3,
+    "value": -4.418932745052493,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 64,
+      "num_heads": 2,
+      "pooling": "attention",
+      "card_features_dim": 64,
+      "learning_rate": 0.00011215664698925708,
+      "min_lr_ratio": 0.1261293354015623,
+      "n_restart_cycles": 7,
+      "clip_range": 0.17497273286855125,
+      "initial_ent_coef": 0.015618690193747614,
+      "gamma": 0.994341568665266,
+      "gae_lambda": 0.9170462112487382,
+      "fold_penalty": 0.05208787923016159
+    },
+    "user_attrs": {
+      "mean_reward": -4.42,
+      "win_rate": 0.0
+    }
+  },
+  {
+    "trial_id": 4,
+    "value": 116.20005609054387,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 64,
+      "num_heads": 2,
+      "pooling": "both",
+      "card_features_dim": 64,
+      "learning_rate": 6.759370327803952e-05,
+      "min_lr_ratio": 0.14093917385252636,
+      "n_restart_cycles": 4,
+      "clip_range": 0.21041723981129154,
+      "initial_ent_coef": 0.022465962536551157,
+      "gamma": 0.9926471841988211,
+      "gae_lambda": 0.9131779175143012,
+      "fold_penalty": 0.032439292868626485
+    },
+    "user_attrs": {
+      "mean_reward": 16.2,
+      "win_rate": 40.0
+    }
+  },
+  {
+    "trial_id": 5,
+    "value": 116.64108382606851,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 64,
+      "num_heads": 4,
+      "pooling": "mean",
+      "card_features_dim": 32,
+      "learning_rate": 0.0002075076841188944,
+      "min_lr_ratio": 0.16394525138194643,
+      "n_restart_cycles": 6,
+      "clip_range": 0.17992787128509846,
+      "initial_ent_coef": 0.010508382534881905,
+      "gamma": 0.9908631314159464,
+      "gae_lambda": 0.9115714592843367,
+      "fold_penalty": 0.045456416450551214
+    },
+    "user_attrs": {
+      "mean_reward": 16.64,
+      "win_rate": 40.0
+    }
+  },
+  {
+    "trial_id": 6,
+    "value": 53.995628800427056,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 64,
+      "num_heads": 2,
+      "pooling": "both",
+      "card_features_dim": 64,
+      "learning_rate": 7.777501333346894e-05,
+      "min_lr_ratio": 0.23804860089823743,
+      "n_restart_cycles": 7,
+      "clip_range": 0.19433826295572965,
+      "initial_ent_coef": 0.02742921180375435,
+      "gamma": 0.9964293766151929,
+      "gae_lambda": 0.9193285029443018,
+      "fold_penalty": 0.0557023599395991
+    },
+    "user_attrs": {
+      "mean_reward": 4.0,
+      "win_rate": 20.0
+    }
+  },
+  {
+    "trial_id": 7,
+    "value": -14.538695507258751,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 64,
+      "num_heads": 2,
+      "pooling": "mean",
+      "card_features_dim": 64,
+      "learning_rate": 6.067511122092791e-05,
+      "min_lr_ratio": 0.16682704143818616,
+      "n_restart_cycles": 5,
+      "clip_range": 0.1655475467329511,
+      "initial_ent_coef": 0.012397307346673657,
+      "gamma": 0.992700921371229,
+      "gae_lambda": 0.9571454851956259,
+      "fold_penalty": 0.032928117280830206
+    },
+    "user_attrs": {
+      "mean_reward": -14.54,
+      "win_rate": 0.0
+    }
+  },
+  {
+    "trial_id": 8,
+    "value": -14.19891166825704,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 64,
+      "num_heads": 4,
+      "pooling": "attention",
+      "card_features_dim": 32,
+      "learning_rate": 6.366989301790464e-05,
+      "min_lr_ratio": 0.18362593677658245,
+      "n_restart_cycles": 6,
+      "clip_range": 0.15360351258749924,
+      "initial_ent_coef": 0.015572929284732228,
+      "gamma": 0.9972661270877332,
+      "gae_lambda": 0.9219780945333487,
+      "fold_penalty": 0.025795794883648922
+    },
+    "user_attrs": {
+      "mean_reward": -14.2,
+      "win_rate": 0.0
+    }
+  },
+  {
+    "trial_id": 9,
+    "value": -9.534262721629387,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 64,
+      "num_heads": 4,
+      "pooling": "attention",
+      "card_features_dim": 64,
+      "learning_rate": 0.00016632958926048993,
+      "min_lr_ratio": 0.17108169629270892,
+      "n_restart_cycles": 4,
+      "clip_range": 0.20847117469124665,
+      "initial_ent_coef": 0.016415601299434715,
+      "gamma": 0.9914921480831989,
+      "gae_lambda": 0.9120387570777382,
+      "fold_penalty": 0.043635717727529666
+    },
+    "user_attrs": {
+      "mean_reward": -9.53,
+      "win_rate": 0.0
+    }
+  },
+  {
+    "trial_id": 10,
+    "value": 114.33526310016283,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 64,
+      "num_heads": 4,
+      "pooling": "mean",
+      "card_features_dim": 32,
+      "learning_rate": 0.0002777156057046714,
+      "min_lr_ratio": 0.2203630373125667,
+      "n_restart_cycles": 6,
+      "clip_range": 0.1825381501108412,
+      "initial_ent_coef": 0.015535489994896042,
+      "gamma": 0.9900221887206822,
+      "gae_lambda": 0.9158209565423147,
+      "fold_penalty": 0.03977149862267361
+    },
+    "user_attrs": {
+      "mean_reward": 14.34,
+      "win_rate": 40.0
+    }
+  },
+  {
+    "trial_id": 11,
+    "value": 126.26761187591751,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 64,
+      "num_heads": 2,
+      "pooling": "both",
+      "card_features_dim": 64,
+      "learning_rate": 9.050046850826207e-05,
+      "min_lr_ratio": 0.1277267430459962,
+      "n_restart_cycles": 4,
+      "clip_range": 0.18288848558324783,
+      "initial_ent_coef": 0.028412151705374013,
+      "gamma": 0.9925000885633666,
+      "gae_lambda": 0.9153287199057691,
+      "fold_penalty": 0.03565584689235518
+    },
+    "user_attrs": {
+      "mean_reward": 16.27,
+      "win_rate": 44.0
+    }
+  },
+  {
+    "trial_id": 12,
+    "value": -12.010759234741167,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 64,
+      "num_heads": 4,
+      "pooling": "mean",
+      "card_features_dim": 32,
+      "learning_rate": 0.00011986964919713401,
+      "min_lr_ratio": 0.1476110688692958,
+      "n_restart_cycles": 7,
+      "clip_range": 0.19156237018430458,
+      "initial_ent_coef": 0.010445948579142474,
+      "gamma": 0.9914341063007732,
+      "gae_lambda": 0.9284350523474794,
+      "fold_penalty": 0.042267058553878065
+    },
+    "user_attrs": {
+      "mean_reward": -12.01,
+      "win_rate": 0.0
+    }
+  },
+  {
+    "trial_id": 13,
+    "value": 94.9491220012553,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 32,
+      "num_heads": 2,
+      "pooling": "both",
+      "card_features_dim": 64,
+      "learning_rate": 0.00011901024734345618,
+      "min_lr_ratio": 0.16663578003041046,
+      "n_restart_cycles": 4,
+      "clip_range": 0.17390301347526535,
+      "initial_ent_coef": 0.028549012784464915,
+      "gamma": 0.9920741282161676,
+      "gae_lambda": 0.9327544798373372,
+      "fold_penalty": 0.03659674961081245
+    },
+    "user_attrs": {
+      "mean_reward": 14.95,
+      "win_rate": 32.0
+    }
+  },
+  {
+    "trial_id": 14,
+    "value": 80.0633144231134,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 64,
+      "num_heads": 2,
+      "pooling": "both",
+      "card_features_dim": 64,
+      "learning_rate": 8.532999141300323e-05,
+      "min_lr_ratio": 0.11665404963193111,
+      "n_restart_cycles": 5,
+      "clip_range": 0.17248431888123109,
+      "initial_ent_coef": 0.025380203960260805,
+      "gamma": 0.995535711130679,
+      "gae_lambda": 0.9210965701976187,
+      "fold_penalty": 0.04447442459995454
+    },
+    "user_attrs": {
+      "mean_reward": 10.06,
+      "win_rate": 28.0
+    }
+  },
+  {
+    "trial_id": 15,
+    "value": 165.02534796504514,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 64,
+      "num_heads": 4,
+      "pooling": "mean",
+      "card_features_dim": 64,
+      "learning_rate": 0.00028860985982187505,
+      "min_lr_ratio": 0.13372256786741407,
+      "n_restart_cycles": 6,
+      "clip_range": 0.15828245145416062,
+      "initial_ent_coef": 0.015866357391587406,
+      "gamma": 0.9916361139980878,
+      "gae_lambda": 0.9101914228742097,
+      "fold_penalty": 0.03793183041506023
+    },
+    "user_attrs": {
+      "mean_reward": 25.03,
+      "win_rate": 56.0
+    }
+  },
+  {
+    "trial_id": 16,
+    "value": 198.51149355326396,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 64,
+      "num_heads": 4,
+      "pooling": "mean",
+      "card_features_dim": 64,
+      "learning_rate": 0.0002946787435817114,
+      "min_lr_ratio": 0.1351704901250442,
+      "n_restart_cycles": 6,
+      "clip_range": 0.18490070771615869,
+      "initial_ent_coef": 0.02045000358871072,
+      "gamma": 0.9942434239383783,
+      "gae_lambda": 0.9176943738663235,
+      "fold_penalty": 0.04407971850909605
+    },
+    "user_attrs": {
+      "mean_reward": 28.51,
+      "win_rate": 68.0
+    }
+  },
+  {
+    "trial_id": 17,
+    "value": 46.154890913521136,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 64,
+      "num_heads": 4,
+      "pooling": "mean",
+      "card_features_dim": 64,
+      "learning_rate": 0.0002740393273719994,
+      "min_lr_ratio": 0.08749700265890911,
+      "n_restart_cycles": 5,
+      "clip_range": 0.15955265397092971,
+      "initial_ent_coef": 0.015373336613061478,
+      "gamma": 0.9915398571643657,
+      "gae_lambda": 0.9279100695515933,
+      "fold_penalty": 0.034883505583199574
+    },
+    "user_attrs": {
+      "mean_reward": 6.15,
+      "win_rate": 16.0
+    }
+  },
+  {
+    "trial_id": 18,
+    "value": 232.06191822034685,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 64,
+      "num_heads": 4,
+      "pooling": "mean",
+      "card_features_dim": 64,
+      "learning_rate": 0.0002832562274825015,
+      "min_lr_ratio": 0.18031372492902895,
+      "n_restart_cycles": 7,
+      "clip_range": 0.19667488399693828,
+      "initial_ent_coef": 0.027892132074942018,
+      "gamma": 0.9931739981281984,
+      "gae_lambda": 0.910527930770741,
+      "fold_penalty": 0.05370479824618806
+    },
+    "user_attrs": {
+      "mean_reward": 32.06,
+      "win_rate": 80.0
+    }
+  },
+  {
+    "trial_id": 19,
+    "value": 127.64788230591756,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 64,
+      "num_heads": 4,
+      "pooling": "mean",
+      "card_features_dim": 64,
+      "learning_rate": 0.00023891285045158812,
+      "min_lr_ratio": 0.2028111252039556,
+      "n_restart_cycles": 6,
+      "clip_range": 0.20636976752569852,
+      "initial_ent_coef": 0.027869137885256554,
+      "gamma": 0.9941488757200632,
+      "gae_lambda": 0.9195814893977576,
+      "fold_penalty": 0.0430752210435729
+    },
+    "user_attrs": {
+      "mean_reward": 17.65,
+      "win_rate": 44.0
+    }
+  },
+  {
+    "trial_id": 20,
+    "value": 63.035788560718615,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 64,
+      "num_heads": 4,
+      "pooling": "both",
+      "card_features_dim": 64,
+      "learning_rate": 0.0002556172930503857,
+      "min_lr_ratio": 0.12340030232355603,
+      "n_restart_cycles": 6,
+      "clip_range": 0.20528699145447032,
+      "initial_ent_coef": 0.013798540393697684,
+      "gamma": 0.9954342880788828,
+      "gae_lambda": 0.9118234645406151,
+      "fold_penalty": 0.053794817430579324
+    },
+    "user_attrs": {
+      "mean_reward": 3.04,
+      "win_rate": 24.0
+    }
+  },
+  {
+    "trial_id": 21,
+    "value": 47.73009784532679,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 64,
+      "num_heads": 4,
+      "pooling": "both",
+      "card_features_dim": 64,
+      "learning_rate": 0.00024961304753918877,
+      "min_lr_ratio": 0.22685062928513972,
+      "n_restart_cycles": 7,
+      "clip_range": 0.1813954625655736,
+      "initial_ent_coef": 0.02828682626626492,
+      "gamma": 0.9900180753617731,
+      "gae_lambda": 0.9124314607349635,
+      "fold_penalty": 0.05535464680288806
+    },
+    "user_attrs": {
+      "mean_reward": -2.27,
+      "win_rate": 20.0
+    }
+  },
+  {
+    "trial_id": 22,
+    "value": 161.38477311383068,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 64,
+      "num_heads": 4,
+      "pooling": "mean",
+      "card_features_dim": 64,
+      "learning_rate": 0.00018761527600354513,
+      "min_lr_ratio": 0.10660518514003837,
+      "n_restart_cycles": 6,
+      "clip_range": 0.17428016168196522,
+      "initial_ent_coef": 0.019694408497176512,
+      "gamma": 0.9959772444285282,
+      "gae_lambda": 0.9141629192701375,
+      "fold_penalty": 0.03993473793580596
+    },
+    "user_attrs": {
+      "mean_reward": 21.38,
+      "win_rate": 56.0
+    }
+  },
+  {
+    "trial_id": 23,
+    "value": 77.36521901386662,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 64,
+      "num_heads": 4,
+      "pooling": "attention",
+      "card_features_dim": 64,
+      "learning_rate": 0.0002918659250098245,
+      "min_lr_ratio": 0.12596393609729967,
+      "n_restart_cycles": 6,
+      "clip_range": 0.21009688168811436,
+      "initial_ent_coef": 0.02692426831927292,
+      "gamma": 0.9927738789137992,
+      "gae_lambda": 0.9144243647438738,
+      "fold_penalty": 0.05664112438665146
+    },
+    "user_attrs": {
+      "mean_reward": 7.37,
+      "win_rate": 28.0
+    }
+  },
+  {
+    "trial_id": 24,
+    "value": 137.0854493134081,
+    "state": "TrialState.COMPLETE",
+    "params": {
+      "embed_dim": 64,
+      "num_heads": 4,
+      "pooling": "mean",
+      "card_features_dim": 64,
+      "learning_rate": 0.00029423543596616004,
+      "min_lr_ratio": 0.1640015616580965,
+      "n_restart_cycles": 7,
+      "clip_range": 0.17226843856558574,
+      "initial_ent_coef": 0.01812069426423107,
+      "gamma": 0.992781793830741,
+      "gae_lambda": 0.9156922994807828,
+      "fold_penalty": 0.027792872900624842
+    },
+    "user_attrs": {
+      "mean_reward": 17.09,
+      "win_rate": 48.0
+    }
+  }
+]

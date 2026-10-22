@@ -74,6 +74,7 @@ class HoldemPokerEnv:
         big_blind: int = 2,
         max_hands_per_session: int = 150,
         blind_escalation_interval: int = 15,
+        dominated_masking: bool = True,
         rng: Optional[np.random.Generator] = None,
         rng_seed: Optional[int] = None,
     ):
@@ -85,6 +86,7 @@ class HoldemPokerEnv:
         self.base_big_blind = big_blind
         self.max_hands_per_session = max_hands_per_session
         self.blind_escalation_interval = blind_escalation_interval
+        self.dominated_masking = dominated_masking
         if rng is None and rng_seed is not None:
             self.rng = np.random.default_rng(rng_seed)
         else:
@@ -221,12 +223,115 @@ class HoldemPokerEnv:
         if bet_to_call > 0:
             legal.append(A_FOLD)
 
-        if p.chips > bet_to_call:
+        if not self.dominated_masking:
+            if p.chips > bet_to_call:
+                legal.extend([A_MIN_RAISE, A_HALF_POT, A_POT, A_ALL_IN])
+            elif p.chips > 0:
+                legal.append(A_ALL_IN)
+            return legal
+
+        # --- Dominated & Redundant Action Masking ---
+        bb_stack = p.chips / max(1, self.big_blind)
+        is_short_stack = (bb_stack <= 20.0)
+
+        # 1. Preflop Discipline
+        if self.street == STREET_PREFLOP and len(p.hand) == 2:
+            from games.holdem.evaluator import evaluate_preflop_hand_chen
+            chen = evaluate_preflop_hand_chen(p.hand[0], p.hand[1])
+
+            # Trash hands (Chen < 0.25) facing an actual raise above the big blind: MUST FOLD
+            if chen < 0.25 and bet_to_call > self.big_blind:
+                return [A_FOLD]
+
+            # Unplayable trash (Chen < 0.18: 7-2o, 8-3o, etc.) in unraised pot: Cannot open-raise (can only fold/call)
+            if chen < 0.18 and bet_to_call <= self.big_blind and not is_short_stack:
+                return [A_CHECK_CALL, A_FOLD] if bet_to_call > 0 else [A_CHECK_CALL]
+
+            # Marginal hands facing a significant 3-bet / re-raise: Cannot re-raise
+            if chen < 0.40 and bet_to_call >= self.big_blind * 3:
+                return [A_CHECK_CALL, A_FOLD] if bet_to_call > 0 else [A_CHECK_CALL]
+
+        # 2. Postflop Air Pruning (Flop, Turn, River)
+        elif self.street in (STREET_FLOP, STREET_TURN, STREET_RIVER) and len(self.board) >= 3 and len(p.hand) == 2:
+            from games.holdem.board_texture import evaluate_board_texture_and_draws
+            tex = evaluate_board_texture_and_draws(p.hand, self.board)
+            # Made hands: 5: overpair, 6: top_pair, 7: mid/bottom_pair, 8: two_pair, 9: set/trips, 10: straight+
+            has_made = any(tex[k] > 0 for k in range(5, 11))
+            # Draws: 11: flush_draw, 12: nut_flush_draw, 13: oesd, 14: gutshot, 15: overcards
+            has_draw = any(tex[k] > 0 for k in range(11, 15))
+            has_overcards = tex[15] > 0
+
+            if self.street in (STREET_TURN, STREET_RIVER):
+                # On Turn/River: only made hands or strong turn draws (flush draw or OESD on turn) can call
+                has_strong_turn_draw = (self.street == STREET_TURN and (tex[11] > 0 or tex[13] > 0))
+                if not has_made and not has_strong_turn_draw:
+                    if bet_to_call > 0:
+                        return [A_FOLD]
+                    else:
+                        # Checked to player with pure air: MUST CHECK (cannot bet air)
+                        return [A_CHECK_CALL]
+            elif self.street == STREET_FLOP:
+                # On Flop: complete air facing a bet must fold
+                if not has_made and not has_draw and not has_overcards:
+                    if bet_to_call > 0:
+                        return [A_FOLD]
+
+        if p.chips <= bet_to_call:
+            # Calling already commits all remaining chips (all-in call).
+            # A separate all-in shove is completely redundant with call.
+            return legal
+
+        chips_after_call = p.chips - bet_to_call
+        min_raise_amt = self._calculate_raise_amount(seat_idx, A_MIN_RAISE)
+        half_pot_amt = self._calculate_raise_amount(seat_idx, A_HALF_POT)
+        pot_amt = self._calculate_raise_amount(seat_idx, A_POT)
+
+        # 1. Min-Raise (only if player has enough chips above bet_to_call)
+        if chips_after_call >= min_raise_amt:
             legal.append(A_MIN_RAISE)
+
+        # 2. Half-Pot (must exceed min-raise and player must have enough chips)
+        if half_pot_amt > min_raise_amt and chips_after_call >= half_pot_amt:
             legal.append(A_HALF_POT)
+
+        # 3. Pot (must exceed half-pot and player must have enough chips)
+        if pot_amt > half_pot_amt and chips_after_call >= pot_amt:
             legal.append(A_POT)
-            legal.append(A_ALL_IN)
-        elif p.chips > 0:
+
+        # 4. All-In Shove Integrity
+        can_shove = False
+        bb_stack = p.chips / max(1, self.big_blind)
+        is_short_stack = (bb_stack <= 20.0)
+        facing_heavy_action = (bet_to_call >= p.chips * 0.35) or (bet_to_call >= self.big_blind * 8)
+        opponent_is_all_in = any(s.is_all_in for s in self.seats if s.is_alive and not s.folded)
+        pot_committed = (p.chips <= self.pot * 1.5)
+
+        if self.street == STREET_PREFLOP and len(p.hand) == 2:
+            from games.holdem.evaluator import evaluate_preflop_hand_chen
+            chen = evaluate_preflop_hand_chen(p.hand[0], p.hand[1])
+            # Only strong hands (Chen >= 0.40), short stacks, or facing heavy action can shove preflop
+            if is_short_stack or opponent_is_all_in or facing_heavy_action:
+                can_shove = True
+            elif chen >= 0.40 and pot_committed:
+                can_shove = True
+        else:
+            # Postflop: permit shove when short-stacked, pot-committed, opponent all-in, or facing heavy action
+            if is_short_stack or pot_committed or opponent_is_all_in or facing_heavy_action:
+                can_shove = True
+            else:
+                # Deep-stacked into unraised/small pot: only shove with strong made hand or monster draw
+                from games.holdem.board_texture import evaluate_board_texture_and_draws
+                tex = evaluate_board_texture_and_draws(p.hand, self.board)
+                has_strong_made = (tex[5] > 0 or tex[6] > 0 or tex[8] > 0 or tex[9] > 0 or tex[10] > 0)
+                has_monster_draw = (tex[11] > 0 and (tex[13] > 0 or tex[7] > 0))
+                if has_strong_made or has_monster_draw:
+                    can_shove = True
+
+            # Over-bet shove prevention: deep stacks (> 12 BB) cannot open-shove all-in into tiny pots (> 2x pot)
+            if bb_stack > 12.0 and p.chips > self.pot * 2.0:
+                can_shove = False
+
+        if can_shove and p.chips > bet_to_call:
             legal.append(A_ALL_IN)
 
         return legal
@@ -291,9 +396,17 @@ class HoldemPokerEnv:
         if action == A_MIN_RAISE:
             return self.min_raise
         elif action == A_HALF_POT:
-            return max(self.min_raise, int(self.pot * 0.5))
+            if self.street == STREET_PREFLOP and self.current_bet <= self.big_blind:
+                # Preflop unraised: standard open is 2.5x BB (add 1.5x BB above big blind)
+                return max(self.min_raise, int(self.big_blind * 1.5))
+            else:
+                return max(self.min_raise, int(self.pot * 0.5))
         elif action == A_POT:
-            return max(self.min_raise, self.pot)
+            if self.street == STREET_PREFLOP and self.current_bet <= self.big_blind:
+                # Preflop unraised: pot-sized open is 3.5x BB (add 2.5x BB above big blind)
+                return max(self.min_raise, int(self.big_blind * 2.5))
+            else:
+                return max(self.min_raise, self.pot)
         else:  # A_ALL_IN
             return max(0, p.chips - p.bet_to_call)
 
