@@ -33,6 +33,8 @@ import core.neural.card_attention
 import core.neural.decoupled_actor
 sys.modules["card_attention"] = core.neural.card_attention
 sys.modules["decoupled_actor"] = core.neural.decoupled_actor
+import rl.holdem_decoupled_actor
+sys.modules["holdem_decoupled_actor"] = rl.holdem_decoupled_actor
 
 # Game imports
 from games.holdem.gym_wrapper import HoldemPokerGymEnv
@@ -77,23 +79,35 @@ from games.five_card_draw.env import (
 # 1. NO-LIMIT TEXAS HOLD'EM INSPECTOR
 # =====================================================================
 def inspect_holdem_moves(
-    model_path: str = "models/holdem/model_holdem_b.zip",
+    model_path: Optional[str] = None,
     num_sessions: int = 50,
     seed_base: int = 500_000,
     max_hands: int = 100,
     sample_hands_to_print: int = 3,
 ) -> Dict[str, Any]:
-    if not os.path.exists(model_path):
-        if model_path == "models/holdem/model_holdem_b.zip" and os.path.exists("models/holdem/model_holdem_a.zip"):
-            model_path = "models/holdem/model_holdem_a.zip"
-        else:
+    if model_path is None or not os.path.exists(model_path):
+        for candidate in ["models/holdem/model_holdem_d.zip", "models/holdem/model_holdem_c.zip", "models/holdem/model_holdem_b.zip", "models/holdem/model_holdem_a.zip"]:
+            if os.path.exists(candidate):
+                model_path = candidate
+                break
+        if model_path is None or not os.path.exists(model_path):
             print(f"[Error] Checkpoint not found at: {model_path}")
             return {}
 
     model = MaskablePPO.load(model_path)
     obs_dim = model.observation_space.shape[0]
-    obs_ver = "b" if obs_dim == 125 else "a"
-    model_label = "MODEL HOLDEM-B" if obs_ver == "b" else "MODEL HOLDEM-A"
+    if obs_dim == 152:
+        obs_ver = "d"
+        model_label = "MODEL HOLDEM-D (TARGETED EXPLOITER)"
+    elif obs_dim == 138:
+        obs_ver = "c"
+        model_label = "MODEL HOLDEM-C (GTO CHAMPION)"
+    elif obs_dim == 125:
+        obs_ver = "b"
+        model_label = "MODEL HOLDEM-B (CRUSHER)"
+    else:
+        obs_ver = "a"
+        model_label = "MODEL HOLDEM-A"
 
     print("\n" + "=" * 78)
     print(f"  GAME MODE: NO-LIMIT TEXAS HOLD'EM — {model_label} ({obs_dim} dims)")

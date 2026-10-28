@@ -429,11 +429,13 @@ class TripleDrawPokerEnv:
         for s_idx, payout in payouts.items():
             self.seats[s_idx].chips += payout
 
+        self.pot = 0
         self._end_hand()
 
     def _award_uncontested_winner(self, winner_seat: int):
         self.phase = PHASE_SHOWDOWN
         self.seats[winner_seat].chips += self.pot
+        self.pot = 0
         self._end_hand()
 
     def _end_hand(self):

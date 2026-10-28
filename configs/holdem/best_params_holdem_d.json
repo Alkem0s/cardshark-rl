@@ -1,0 +1,30 @@
+{
+  "exploit_value_bonus": 0.0727946872333797,
+  "exploit_steal_bonus": 0.041627476701591413,
+  "bluff_station_penalty": 0.14541712358681436,
+  "icm_equity_weight": 0.7667737439636487,
+  "fold_penalty": -0.01716131449452584,
+  "pot_control_bonus": 0.02568198488145982,
+  "elimination_penalty": 3.137705091792748,
+  "win_bonus": 1.063547816860238,
+  "learning_rate": 5.741036063465055e-05,
+  "initial_ent_coef": 0.018628583713734683,
+  "min_ent_coef": 0.007818462467582683,
+  "clip_range": 0.1988613588645796,
+  "min_lr_ratio": 0.28611418985141135,
+  "n_steps": 256,
+  "batch_size": 256,
+  "n_epochs": 5,
+  "gamma": 0.992,
+  "gae_lambda": 0.92,
+  "n_restart_cycles": 6,
+  "embed_dim": 32,
+  "num_heads": 4,
+  "pooling": "mean",
+  "card_features_dim": 32,
+  "game_features_dim": 96,
+  "net_arch": [
+    256,
+    256
+  ]
+}

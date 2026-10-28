@@ -101,6 +101,10 @@ def main():
         print("\n--- Texas Hold'em Suites ---")
         if not run_unittest_dir("test_holdem", env):
             all_passed = False
+        if not run_test_script("test_holdem_e.py", env):
+            all_passed = False
+        if not run_test_script("test_holdem_f.py", env):
+            all_passed = False
 
     print("\n" + "=" * 65)
     if all_passed:
