@@ -335,6 +335,83 @@ def build_docx_report(output_path):
         "By the final stages of training, the agent optimizes purely for raw tournament outcomes and chip accumulation, eliminating the risk of reward hacking."
     )
 
+    add_h2("3.9 Observation Vector Anatomy (Model F Feature Decomposition)")
+    add_body(
+        "To provide complete transparency into the agent's sensory input, the 168-dimensional observation vector for Model F is structured into six functional tiers:"
+    )
+
+    obs_table = doc.add_table(rows=8, cols=3)
+    obs_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    obs_table.autofit = False
+    set_table_borders(obs_table)
+
+    obs_headers = ["Tier", "Dimensions", "Feature Components"]
+    obs_col_widths = [Inches(1.8), Inches(1.1), Inches(3.6)]
+
+    hdr_cells = obs_table.rows[0].cells
+    for i, title in enumerate(obs_headers):
+        hdr_cells[i].width = obs_col_widths[i]
+        set_cell_background(hdr_cells[i], "1B365D")
+        set_cell_margins(hdr_cells[i], top=100, bottom=100, left=100, right=100)
+        p = hdr_cells[i].paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER if i == 1 else WD_ALIGN_PARAGRAPH.LEFT
+        r = p.add_run(title)
+        r.font.name = "Calibri"
+        r.font.size = Pt(9)
+        r.font.bold = True
+        r.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+
+    obs_data = [
+        ("1. Core Table & Card State", "73", "Private hole cards (4), community cards (10), evaluated hand strength & Chen score (1), pot odds, pot size, hero chips, and bet-to-call ratios (4), street indicators (4 one-hot), position relative to button (5 one-hot), per-seat chip and status tracking across 5 seats (25), and street action history (20)."),
+        ("2. Opponent Profiling & Textures", "52", "ICM stack geometry and shortest stack ratios (3), board texture engine evaluating pairs, monotone boards, and straight/flush draws (17), and dual-timescale Bayesian opponent tracking tracking VPIP, PFR, fold-to-cbet, and aggression across fast and slow windows (32)."),
+        ("3. Tournament Dynamics & GTO", "13", "Pre-flop GTO positional guidance (6), post-flop stack-to-pot ratio (SPR), showdown value classification, in-position advantage flag, range aggressor indicator (4), and non-linear ICM tournament equity valuations (3)."),
+        ("4. Targeted Opponent Exploitation", "14", "Real-time exploitability vectors evaluating opponent folding vulnerability, calling station value extraction opportunities, steal feasibility, and dynamic opponent archetype classification."),
+        ("5. Self-Play & Multi-Agent", "6", "Pre-flop 3-bet squeeze intensity, check-raise volatility index, effective stack depth in big blinds, push/fold regime trigger, multiway pot indicator, and neural league sparring opponent flag."),
+        ("6. Tournament Closer & Endgame", "10", "Hands remaining in blind level, blind escalation urgency, hero chip rank, Harrington M-factor, Harrington M-Zone, heads-up regime flag, podium/bubble pressure flag, Sklansky-Chubukov push urgency, fold-to-cbet steal indicator, and chip dominance ratio."),
+        ("Total", "168", "Complete state vector fed to Card Attention and policy networks."),
+    ]
+
+    for row_idx, row_data in enumerate(obs_data, start=1):
+        row_cells = obs_table.rows[row_idx].cells
+        is_total = (row_idx == len(obs_data))
+        bg = "E2E8F0" if is_total else ("F8FAFC" if row_idx % 2 == 1 else "FFFFFF")
+        for col_idx, text in enumerate(row_data):
+            row_cells[col_idx].width = obs_col_widths[col_idx]
+            set_cell_background(row_cells[col_idx], bg)
+            set_cell_margins(row_cells[col_idx], top=80, bottom=80, left=100, right=100)
+            p = row_cells[col_idx].paragraphs[0]
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER if col_idx == 1 else WD_ALIGN_PARAGRAPH.LEFT
+            r = p.add_run(text)
+            r.font.name = "Calibri"
+            r.font.size = Pt(8.5)
+            if is_total or col_idx == 0:
+                r.font.bold = True
+            r.font.color.rgb = RGBColor(0x0F, 0x17, 0x2A)
+
+    doc.add_paragraph().paragraph_format.space_after = Pt(8)
+
+    add_h2("3.10 Tournament Structure & Benchmark Evaluation Protocol")
+    add_body(
+        "To evaluate agents in an ecologically valid competitive setting rather than synthetic isolated hands, the framework implements an end-to-end Sit-and-Go tournament simulator:"
+    )
+    add_bullet(
+        "Tournament Mechanics: ",
+        "5-player Sit-and-Go tournament with winner-take-all and podium incentives. Each player starts with 1,000 chips (5,000 total chips). "
+        "Blinds start at 5/10 and double every 20 hands across seven uncapped tiers (10/20 up to 640/1280) to force natural endgame transitions without timeouts."
+    )
+    add_bullet(
+        "Benchmark Opponent Roster: ",
+        "Evaluations pit the agent against a balanced field consisting of TAGBot (tight-aggressive, selective ranges, high post-flop pressure), "
+        "LAGBot (loose-aggressive, wide ranges, frequent float bets), CallingStationBot (passive calling station, rarely folds), and RandomHoldemBot (stochastic noise)."
+    )
+    add_bullet(
+        "Evaluation Metrics: ",
+        "Performance is measured across 1st-place win rate (% of tournaments won outright), podium finish rate (% top 2 or 3 finishes), average net chips accumulated, "
+        "and a composite score: Score = (Wins * 5.0) + (Podiums * 2.0) + (Net Chips * 0.05) - (Eliminations * 1.0)."
+    )
+
+    doc.add_paragraph().paragraph_format.space_after = Pt(12)
+
     # --- Section 4: Progressive Model Iterations ---
     add_h1("4. Progressive Model Iterations (Texas Hold'em Models A through F)")
     add_body(

@@ -87,6 +87,38 @@ The CardShark-RL framework addresses the game-theoretic and computational challe
 
 **How It Was Implemented:** We implemented a scheduled curriculum callback that manages reward shaping weights across two distinct phases. In Phase 1 (Scaffolding), auxiliary shaping rewards are fully active to accelerate policy stabilization and prevent blunders. In Phase 2 (Competition), a decay schedule systematically scales down these shaping multipliers toward zero over several hundred thousand steps. By the final stages of training, the agent optimizes purely for raw tournament outcomes and chip accumulation, eliminating the risk of reward hacking.
 
+### 3.9 Observation Vector Anatomy (Model F Feature Decomposition)
+To provide complete transparency into the agent's sensory input, the 168-dimensional observation vector for Model F is structured into six functional tiers:
+
+| Tier | Dimensions | Feature Components |
+| :--- | :---: | :--- |
+| **1. Core Table & Card State** | 73 | Private hole cards (4), community board cards (10), evaluated hand strength & Chen preflop score (1), pot odds, pot size, hero chips, and bet-to-call ratios (4), street indicators (4 one-hot), position relative to dealer button (5 one-hot), per-seat chip and status tracking across 5 seats (25), and round action history across 4 streets (20). |
+| **2. Opponent Profiling & Board Textures** | 52 | ICM chip geometry and shortest stack ratios (3), board texture engine evaluating pairs, monotone boards, and straight/flush draws (17), and dual-timescale Bayesian opponent tracking tracking VPIP, PFR, fold-to-cbet, and aggression across fast and slow windows for all 4 opponents (32). |
+| **3. Tournament Dynamics & GTO Baselines** | 13 | Pre-flop GTO positional baseline guidance (6), post-flop stack-to-pot ratio (SPR), showdown value classification, in-position advantage flag, range aggressor indicator (4), and non-linear ICM tournament equity valuations (3). |
+| **4. Targeted Opponent Exploitation** | 14 | Real-time exploitability vectors evaluating opponent folding vulnerability, calling station value extraction opportunities, steal feasibility, and dynamic opponent archetype classification. |
+| **5. Self-Play & Multi-Agent Dynamics** | 6 | Pre-flop 3-bet squeeze intensity, check-raise volatility index, effective stack depth in big blinds, push/fold regime trigger, multiway pot indicator, and neural league sparring opponent flag. |
+| **6. Tournament Closer & Endgame Regimes** | 10 | Hands remaining in current blind level, blind escalation urgency, hero chip leaderboard rank, Harrington M-factor, Harrington M-Zone (Red/Orange/Yellow/Green), heads-up regime flag, podium/bubble pressure flag, Sklansky-Chubukov push urgency, fold-to-cbet steal indicator, and chip dominance ratio over second stack. |
+| **Total** | **168** | **Complete state vector fed to Card Attention and policy networks.** |
+
+### 3.10 Tournament Structure & Benchmark Evaluation Protocol
+To evaluate agents in an ecologically valid competitive setting rather than synthetic isolated hands, the framework implements an end-to-end Sit-and-Go tournament simulator:
+
+- **Tournament Mechanics:**
+  - **Table Format:** 5-player Sit-and-Go tournament with winner-take-all / podium incentives.
+  - **Chip Stacks:** Each player starts with 1,000 chips (5,000 total table chips in play).
+  - **Blind Schedule:** Starts at Small Blind = 5 / Big Blind = 10, doubling every 20 hands across seven uncapped tiers (10/20, 20/40, 40/80, 80/160, 160/320, 320/640, 640/1280) to force natural endgame transitions without artificial turn timeouts.
+- **Benchmark Opponent Roster:**
+  - `TAGBot` (Tight-Aggressive): Selective pre-flop opening ranges; applies strong post-flop pressure on high equity.
+  - `LAGBot` (Loose-Aggressive): Wide pre-flop opening ranges; frequent continuation betting and aggressive float lines.
+  - `CallingStationBot`: Highly passive calling station; rarely folds post-flop, calls bets with marginal showdown value.
+  - `RandomHoldemBot`: Stochastic random player introducing unpredictable betting noise and extreme entropy.
+- **Evaluation Metrics:**
+  - **1st-Place Win Rate:** Percentage of completed tournament sessions won outright (first place).
+  - **Podium Finish Rate:** Percentage of tournaments finishing in the top 2 (heads-up) or top 3.
+  - **Average Net Chips:** Net chip accumulation relative to the 1,000-chip starting stack.
+  - **Composite Evaluation Score:** Balanced metric combining titles, podiums, chip efficiency, and survival:  
+    $$\text{Score} = (\text{Wins} \times 5.0) + (\text{Podiums} \times 2.0) + (\text{Net Chips} \times 0.05) - (\text{Eliminations} \times 1.0)$$
+
 ---
 
 ## 4. Progressive Model Iterations (Texas Hold'em Models A through F)
