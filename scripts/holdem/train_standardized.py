@@ -145,10 +145,27 @@ def get_model_architecture_spec(model_letter: str) -> Dict[str, Any]:
             "default_icm_weight": 0.67,
             "default_exploit_bonus": 0.10,
             "default_uncontested_bonus": 0.015,
+            "heads_up_mode": False,
+        },
+        "g": {
+            "obs_version": "f",
+            "obs_dim": OBS_DIM_HOLDEM_F,
+            "num_actions": NUM_ACTIONS_HOLDEM_F,
+            "policy_type": "decoupled",
+            "use_league": True,
+            "pos_gto_masking": True,
+            "exploitative_masking": True,
+            "unshackle_bluffs": True,
+            "default_icm_weight": 0.0,       # Pure linear chip-EV
+            "default_exploit_bonus": 0.12,
+            "default_uncontested_bonus": 0.015,
+            "heads_up_mode": True,
+            "league_dir": "league_g",
+            "anchor_model_path": "models/holdem/model_holdem_f_champion_2.5m.zip",
         },
     }
     if m not in specs:
-        raise ValueError(f"Unknown model identifier '{model_letter}'. Choose from: a, b, c, d, e, f")
+        raise ValueError(f"Unknown model identifier '{model_letter}'. Choose from: a, b, c, d, e, f, g")
     return specs[m]
 
 
@@ -209,13 +226,14 @@ class HoldemLeagueSnapshotCallback(BaseCallback):
         league_pool: HoldemLeaguePool,
         snapshot_freq: int = 100_000,
         league_dir: str = "models/holdem/league",
+        initial_step: int = 0,
         verbose: int = 1,
     ):
         super().__init__(verbose)
         self.league_pool = league_pool
         self.snapshot_freq = snapshot_freq
         self.league_dir = league_dir
-        self.last_snapshot_step = 0
+        self.last_snapshot_step = int(initial_step)
         os.makedirs(self.league_dir, exist_ok=True)
 
     def _on_step(self) -> bool:
@@ -223,7 +241,10 @@ class HoldemLeagueSnapshotCallback(BaseCallback):
             self.last_snapshot_step = self.num_timesteps
             snapshot_path = os.path.join(self.league_dir, f"snapshot_{self.num_timesteps}.zip")
             self.model.save(snapshot_path)
-            self.league_pool.register_checkpoint(snapshot_path)
+            if hasattr(self.league_pool, "add_snapshot"):
+                self.league_pool.add_snapshot(snapshot_path)
+            elif hasattr(self.league_pool, "register_checkpoint"):
+                self.league_pool.register_checkpoint(snapshot_path)
             if self.verbose > 0:
                 print(f"  [League] Snapshotted checkpoint at {self.num_timesteps:,} steps -> {snapshot_path}")
         return True
@@ -246,6 +267,7 @@ def make_env_creator(
             hero_seat=0,
             max_hands_per_session=150,
             blind_escalation_interval=15,
+            heads_up_mode=spec.get("heads_up_mode", False),
             obs_version=spec["obs_version"],
             pos_gto_masking=spec["pos_gto_masking"],
             exploitative_masking=spec["exploitative_masking"],
@@ -282,6 +304,7 @@ def evaluate_model_tournament(
         hero_seat=0,
         max_hands_per_session=150,
         blind_escalation_interval=15,
+        heads_up_mode=spec.get("heads_up_mode", False),
         obs_version=spec["obs_version"],
         pos_gto_masking=spec["pos_gto_masking"],
         exploitative_masking=spec["exploitative_masking"],
@@ -348,6 +371,7 @@ def train_standardized(
     output_name: Optional[str] = None,
     smoke_test: bool = False,
     eval_sessions: int = 25,
+    resume_from: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Execute standardized training for any Texas Hold'em model generation."""
     spec = get_model_architecture_spec(model_letter)
@@ -384,7 +408,14 @@ def train_standardized(
     initial_ent = float(params.get("initial_ent_coef", 0.025))
     min_ent = float(params.get("min_ent_coef", 0.005))
     clip_range = float(params.get("clip_range", 0.20))
-    scaffold_steps = int(params.get("scaffold_steps", int(timesteps * 0.4)))
+    raw_scaffold = params.get("scaffold_steps")
+    if raw_scaffold is not None:
+        if timesteps > 500_000 and raw_scaffold <= 250_000:
+            scaffold_steps = int(timesteps * (float(raw_scaffold) / 250_000.0))
+        else:
+            scaffold_steps = int(raw_scaffold)
+    else:
+        scaffold_steps = int(timesteps * 0.4)
     min_shaping_mult = float(params.get("min_shaping_mult", 0.01))
 
     # CPU Affinity
@@ -393,13 +424,21 @@ def train_standardized(
     # League Pool
     league_pool = None
     if spec["use_league"]:
-        anchor_path = os.path.join(output_dir, "model_holdem_e_best.zip")
-        if not os.path.exists(anchor_path):
-            anchor_path = os.path.join(output_dir, "model_holdem_d_best.zip")
+        anchor_candidate = spec.get("anchor_model_path")
+        if anchor_candidate and os.path.exists(anchor_candidate):
+            anchor_path = anchor_candidate
+        else:
+            anchor_path = os.path.join(output_dir, "model_holdem_f_champion_2.5m.zip")
+            if not os.path.exists(anchor_path):
+                anchor_path = os.path.join(output_dir, "model_holdem_e_best.zip")
+                if not os.path.exists(anchor_path):
+                    anchor_path = os.path.join(output_dir, "model_holdem_d_best.zip")
+        league_sub = spec.get("league_dir", "league")
+        league_dir = os.path.join(output_dir, league_sub)
         league_pool = HoldemLeaguePool(
-            league_dir=os.path.join(output_dir, "league"),
+            league_dir=league_dir,
             anchor_model_path=anchor_path,
-            max_snapshots=10,
+            max_snapshots=12,
         )
 
     # Environments
@@ -430,23 +469,38 @@ def train_standardized(
     batch_size = int(params.get("batch_size", 256))
     n_epochs = int(params.get("n_epochs", 5))
 
-    model = MaskablePPO(
-        policy=policy_cls,
-        env=vec_env,
-        learning_rate=lr_schedule,
-        n_steps=n_steps,
-        batch_size=batch_size,
-        n_epochs=n_epochs,
-        gamma=0.99,
-        gae_lambda=0.95,
-        clip_range=clip_range,
-        ent_coef=initial_ent,
-        vf_coef=0.5,
-        max_grad_norm=0.5,
-        policy_kwargs=policy_kwargs,
-        seed=seed,
-        verbose=1,
-    )
+    if resume_from and os.path.exists(resume_from):
+        print(f"  [Resume] Loading pre-trained model weights from: {resume_from}")
+        model = MaskablePPO.load(
+            resume_from,
+            env=vec_env,
+            learning_rate=lr_schedule,
+            seed=seed,
+            verbose=1,
+        )
+        already_trained = int(getattr(model, "num_timesteps", 0))
+        remaining_timesteps = max(0, timesteps - already_trained)
+        print(f"  [Resume] Model has already completed {already_trained:,} steps. Remaining to train: {remaining_timesteps:,}")
+    else:
+        already_trained = 0
+        remaining_timesteps = timesteps
+        model = MaskablePPO(
+            policy=policy_cls,
+            env=vec_env,
+            learning_rate=lr_schedule,
+            n_steps=n_steps,
+            batch_size=batch_size,
+            n_epochs=n_epochs,
+            gamma=0.99,
+            gae_lambda=0.95,
+            clip_range=clip_range,
+            ent_coef=initial_ent,
+            vf_coef=0.5,
+            max_grad_norm=0.5,
+            policy_kwargs=policy_kwargs,
+            seed=seed,
+            verbose=1,
+        )
 
     # Callbacks
     callbacks = [
@@ -458,19 +512,30 @@ def train_standardized(
         ),
     ]
     if spec["use_league"] and league_pool is not None and not smoke_test:
-        callbacks.append(HoldemLeagueSnapshotCallback(league_pool=league_pool, snapshot_freq=max(50_000, timesteps // 5)))
+        callbacks.append(HoldemLeagueSnapshotCallback(
+            league_pool=league_pool,
+            snapshot_freq=100_000,
+            league_dir=league_dir,
+            initial_step=already_trained,
+        ))
 
     # Train
     start_time = time.time()
-    print(f"\n  [Training] Launching {timesteps:,} timesteps across {n_envs} environments...")
-    model.learn(total_timesteps=timesteps, callback=CallbackList(callbacks))
+    if remaining_timesteps > 0:
+        print(f"\n  [Training] Launching {remaining_timesteps:,} timesteps across {n_envs} environments (total target: {timesteps:,})...")
+        model.learn(total_timesteps=remaining_timesteps, callback=CallbackList(callbacks), reset_num_timesteps=False)
+    else:
+        print(f"\n  [Training Notice] Model already completed requested timesteps ({already_trained:,} >= {timesteps:,}).")
     elapsed_mins = (time.time() - start_time) / 60.0
     print(f"  [Training Complete] Elapsed: {elapsed_mins:.2f} minutes.")
 
     # Save
     os.makedirs(output_dir, exist_ok=True)
     if not output_name:
-        output_name = f"model_holdem_{model_letter.lower()}_standardized.zip"
+        if model_letter.lower() == "g":
+            output_name = "model_holdem_g_1v1_specialist.zip"
+        else:
+            output_name = f"model_holdem_{model_letter.lower()}_standardized.zip"
     save_path = os.path.join(output_dir, output_name)
     model.save(save_path)
     print(f"  [Model Saved] -> {save_path}")
@@ -496,14 +561,15 @@ def train_standardized(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Standardized Texas Hold'em Model Trainer")
-    parser.add_argument("--model", type=str, default="f", choices=["a", "b", "c", "d", "e", "f"], help="Model generation (a..f)")
-    parser.add_argument("--timesteps", type=int, default=250_000, help="Total training timesteps")
+    parser.add_argument("--model", type=str, default="g", choices=["a", "b", "c", "d", "e", "f", "g"], help="Model generation (a..g)")
+    parser.add_argument("--timesteps", type=int, default=2_000_000, help="Total training timesteps")
     parser.add_argument("--n-envs", type=int, default=12, help="Number of parallel environments (P-cores)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--params-path", type=str, default=None, help="Path to hyperparameters JSON")
     parser.add_argument("--output-dir", type=str, default="models/holdem", help="Directory to save model")
     parser.add_argument("--output-name", type=str, default=None, help="Custom filename for output model")
     parser.add_argument("--eval-sessions", type=int, default=25, help="Number of post-training tournament evaluation sessions")
+    parser.add_argument("--resume-from", type=str, default=None, help="Path to checkpoint model to resume training from")
     parser.add_argument("--smoke-test", action="store_true", help="Quick 2000-step smoke test")
     args = parser.parse_args()
 
@@ -517,4 +583,5 @@ if __name__ == "__main__":
         output_name=args.output_name,
         smoke_test=args.smoke_test,
         eval_sessions=args.eval_sessions,
+        resume_from=args.resume_from,
     )

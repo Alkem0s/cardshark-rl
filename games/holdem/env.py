@@ -93,6 +93,7 @@ class HoldemPokerEnv:
         opponents: Optional[Dict[int, Any]] = None,
         rng: Optional[np.random.Generator] = None,
         rng_seed: Optional[int] = None,
+        heads_up_mode: bool = False,
     ):
         self.num_seats = num_seats
         self.starting_chips = starting_chips
@@ -110,6 +111,7 @@ class HoldemPokerEnv:
         self.unshackle_bluffs = (num_actions == NUM_ACTIONS_HOLDEM_F) if unshackle_bluffs is None else bool(unshackle_bluffs)
         self.tracker = tracker
         self.opponents = opponents
+        self.heads_up_mode = bool(heads_up_mode)
         if rng is None and rng_seed is not None:
             self.rng = np.random.default_rng(rng_seed)
         else:
@@ -145,16 +147,31 @@ class HoldemPokerEnv:
         self.hands_played = 0
         self.small_blind = self.base_small_blind
         self.big_blind = self.base_big_blind
-        self.dealer_seat = int(self.rng.integers(0, self.num_seats))
         self.pot = 0
 
-        for s in self.seats:
-            s.reset_for_hand()
-            s.is_alive = True
-            if randomize_stacks:
-                s.chips = int(self.rng.integers(max(10, self.starting_chips // 2), self.starting_chips * 2))
-            else:
-                s.chips = self.starting_chips
+        if self.heads_up_mode:
+            self.dealer_seat = int(self.rng.integers(0, 2))
+            for i, s in enumerate(self.seats):
+                s.reset_for_hand()
+                if i in (0, 1):
+                    s.is_alive = True
+                    if randomize_stacks:
+                        s.chips = int(self.rng.integers(max(10, self.starting_chips // 2), self.starting_chips * 2))
+                    else:
+                        s.chips = self.starting_chips
+                else:
+                    s.is_alive = False
+                    s.chips = 0
+                    s.folded = True
+        else:
+            self.dealer_seat = int(self.rng.integers(0, self.num_seats))
+            for s in self.seats:
+                s.reset_for_hand()
+                s.is_alive = True
+                if randomize_stacks:
+                    s.chips = int(self.rng.integers(max(10, self.starting_chips // 2), self.starting_chips * 2))
+                else:
+                    s.chips = self.starting_chips
 
         self.start_hand()
 

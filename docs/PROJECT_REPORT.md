@@ -1,10 +1,8 @@
 # CardShark-RL: Autonomous Reinforcement Learning for Card Games and Tournament Play
 
 **Comprehensive System Architecture, Methodology Implementation, and Academic Research Plan**  
-*Course:* CENG 454: Reinforcement Learning (Term Project)  
-*Institution:* İzmir Kâtip Çelebi University, Department of Computer Engineering  
-*Project Team:* Alkım Gönenç Efe, Sarp Sünbül, Damla Parlakyıldız  
-*Date:* October 2026  
+*Institution:* İzmir Kâtip Çelebi University, Department of Computer Engineering
+*Project Team:* Alkım Gönenç Efe, Sarp Sünbül, Damla Parlakyıldız 
 
 ---
 
@@ -12,7 +10,7 @@
 1. [Project Overview & Research Motivation](#1-project-overview--research-motivation)
 2. [What Sets This Study Apart From Existing Poker AI](#2-what-sets-this-study-apart-from-existing-poker-ai)
 3. [Core Methodology & Implementation Details](#3-core-methodology--implementation-details)
-4. [Progressive Model Iterations (Texas Hold'em Models A through F)](#4-progressive-model-iterations-texas-holdem-models-a-through-f)
+4. [Progressive Model Iterations (Texas Hold'em Models A through G)](#4-progressive-model-iterations-texas-holdem-models-a-through-g)
 5. [Multi-Game Generalization: 5-Card Draw & 2-7 Triple Draw](#5-multi-game-generalization-5-card-draw--2-7-triple-draw)
 6. [Academic Paper Focus & Planned Ablation Studies](#6-academic-paper-focus--planned-ablation-studies)
 
@@ -20,11 +18,11 @@
 
 ## 1. Project Overview & Research Motivation
 
-CardShark-RL is an autonomous reinforcement learning framework engineered to solve multi-player, imperfect-information card games. The project was initiated as our term project for CENG 454 (Reinforcement Learning) with the primary goal of investigating whether model-free deep reinforcement learning algorithms can learn sound, adaptive tournament strategies on standard commodity hardware, without relying on heavy real-time tree solvers or massive computing clusters.
+CardShark-RL is an autonomous reinforcement learning framework engineered to solve multi-player, imperfect-information card games. The project has the primary goal of investigating whether model-free deep reinforcement learning algorithms can learn sound, adaptive tournament strategies on standard commodity hardware, without relying on heavy real-time tree solvers or massive computing clusters.
 
 Card games represent a classic imperfect-information challenge in artificial intelligence. Unlike board games such as chess or Go, where both players have full visibility over the board state, a poker player only observes their private hand and the sequence of public actions. Furthermore, games are characterized by high statistical variance across deck deals, non-stationary multi-agent dynamics (where players adapt to one another), and shifting risk profiles as tournament blinds escalate. A successful agent cannot simply memorize hand strengths; it must learn to infer hidden information from betting patterns, exploit predictable opponent archetypes, and manage chip survival under tournament pressure.
 
-This document serves two primary functions: first, as an accessible technical reference bringing all team members and co-authors up to speed on the system's architecture and design decisions; and second, as a structured methodology overview for our faculty advisor and the foundation for our upcoming paper.
+This document serves two primary functions: first, as an accessible technical reference bringing all team members and co-authors up to speed on the system's architecture and design decisions; and second, the foundation for our upcoming paper.
 
 ---
 
@@ -62,10 +60,10 @@ The CardShark-RL framework addresses the game-theoretic and computational challe
 
 **How It Was Implemented:** The environment maintains running historical statistics for every seat at the table across consecutive hands. It tracks metrics including Voluntarily Put Money in Pot (VPIP, measuring loose vs. tight pre-flop play), Pre-Flop Raise frequency (PFR, measuring pre-flop aggression), and Fold-to-Bet frequencies across each street. To handle the low sample sizes inherent in short tournament sessions, Bayesian updates smooth observed counts toward standard prior distributions. The resulting statistical profiles are categorized into opponent archetypes (such as Tight-Aggressive, Loose-Aggressive, or Calling Station) and directly concatenated into the observation vector. Furthermore, the reward function includes calibrated shaping bonuses that reward the agent for executing mathematically sound exploitative lines, such as bluffing against players with high fold frequencies or extracting value bets against calling stations without bluffing.
 
-### 3.4 Self-Play League Sparring (Prioritized Fictitious Self-Play)
-**The Problem:** Training an agent exclusively against static, rule-based bots causes severe overfitting: the agent learns to exploit the hardcoded programming quirks of those bots, but completely falls apart when exposed to novel styles or aggressive neural counter-strategies.
+### 3.4 Self-Play League Sparring & Dynamic Opponent Curriculum
+**The Problem:** Training an agent exclusively against static, rule-based bots causes severe overfitting: the agent learns to exploit the hardcoded programming quirks of those bots, but completely falls apart when exposed to novel styles or aggressive neural counter-strategies. Conversely, exposing an untrained network immediately to unconstrained self-play often leads to policy destabilization or bizarre exploratory loops before basic card fundamentals are established.
 
-**How It Was Implemented:** We implemented an autonomous self-play league pool. During training, the framework periodically saves frozen snapshots of the learning policy. When generating training rollout tables, seats are dynamically populated using a prioritized mixture: fixed heuristic bots are retained to maintain basic poker fundamentals, while historical neural checkpoints are sampled from the pool based on competitive difficulty. Past checkpoints that present a high challenge to the current policy are sampled more frequently. Sparring against diverse past iterations of itself prevents the policy from settling into predictable, easily exploitable habits.
+**How It Was Implemented:** We implemented an autonomous self-play league pool governed by a dynamic curriculum schedule. Training begins with an emphasis on diverse heuristic bots (tight-aggressive, loose-aggressive, and passive calling stations) to ground the policy in solid poker discipline—such as folding unplayable holdings pre-flop, respecting aggressive betting, and extracting value from calling stations. As training progresses, the opponent distribution systematically shifts toward self-play league sparring. Checkpoints of the learning policy are saved periodically into the pool. By late-stage training, the vast majority of sparring occurs against past neural iterations and anchor champions sampled via Prioritized Fictitious Self-Play. This curriculum ensures that the agent first masters fundamental game discipline before refining high-level counter-strategies against adaptive neural adversaries.
 
 ### 3.5 Tournament Chip Valuation (Independent Chip Model / ICM Equity)
 **The Problem:** In cash games, chips have constant linear value. In tournament poker, however, chips lost are worth more than chips gained: losing one's last chip knocks a player out of the tournament, whereas doubling one's chip stack does not double the probability of winning first place. Agents that evaluate chip counts linearly take reckless gambles on marginal hands and bust out prematurely.
@@ -121,9 +119,9 @@ To evaluate agents in an ecologically valid competitive setting rather than synt
 
 ---
 
-## 4. Progressive Model Iterations (Texas Hold'em Models A through F)
+## 4. Progressive Model Iterations (Texas Hold'em Models A through G)
 
-Rather than treating model development as a single monolithic training run, Texas Hold'em models were evolved across six sequential generations (Model A through Model F). Each iteration was designed to diagnose and resolve specific behavioral and game-theoretic flaws observed in previous versions:
+Texas Hold'em models were evolved across seven sequential generations (Model A through Model G). Each iteration was designed to diagnose and resolve specific behavioral and game-theoretic flaws observed in previous versions:
 
 - **Model A (Baseline Architecture):** Implemented as the initial proof-of-concept. Used a 73-dimensional state vector and a flat 6-action discrete space, trained exclusively against static rule-based bots. While it learned basic hand rankings and fundamental rules, it exhibited severe passivity, folded excessively under any aggression, and suffered from bet-sizing collapse.
 - **Model B (Opponent Profiling):** Expanded the observation space to 125 dimensions by incorporating Bayesian tracking of opponent VPIP, PFR, and fold tendencies. This enabled the agent to distinguish between tight and loose opponents, allowing it to open wider against timid players and fold against tight raisers.
@@ -131,6 +129,14 @@ Rather than treating model development as a single monolithic training run, Texa
 - **Model D (Active Exploitation):** Expanded state inputs to 152 dimensions with explicit opponent exploitability signals. The agent began actively altering its post-flop lines based on opponent archetypes, consistently value-betting against calling stations and executing targeted bluffs against frequent folders.
 - **Model E (Self-Play & Decoupled Policy):** Expanded inputs to 158 dimensions and introduced two major architectural milestones: the Prioritized Fictitious Self-Play league pool and the two-stage decoupled action policy. Decoupling strategic intent from sizing eliminated bet-sizing collapse, while self-play sparring eliminated the agent's vulnerability to varied opponent counter-strategies.
 - **Model F (Fine-Grained Actions, Uncapped Blinds & Boundary Screening):** Expanded observation inputs to 168 dimensions and the action space to 8 discrete actions (introducing a 33% micro-continuation bet and a 150% overbet). Uncapped blind escalation up to level 7 was introduced to eliminate tournament stalling, and hyperparameter boundaries were systematically screened across learning rates, entropy schedules, and reward shaping coefficients to ensure stable policy convergence.
+- **Model G (1v1 Heads-Up Specialist):** A dedicated heads-up specialist trained exclusively in two-player environments under pure linear chip-EV, 100 big blind deep stacks, and aggressive button exploitation. By removing tournament ICM survival penalties and utilizing a dynamic curriculum that transitions from heuristic fundamentals to self-play dominance, Model G learns wide button opening ranges, persistent continuation betting, and aggressive endgame extraction without fear of tournament elimination.
+
+### The Composite Model Architecture
+To resolve the fundamental objective mismatch between multi-player tournament survival (where chips lost are worth more than chips won) and heads-up endgame play (where the game reverts to zero-sum linear chip extraction), CardShark-RL introduces a modular **Composite Model**. 
+
+Rather than hardcoding specific networks, the Composite Model provides a flexible, plug-and-play architecture with two explicit policy slots:
+1. **Tournament Model Slot:** Operates whenever three or more competitors remain at the table, executing disciplined stack preservation and ICM bubble survival (e.g., slotted with Model F).
+2. **Heads-Up Model Slot:** Automatically engages the moment the tournament narrows to the final two competitors, unleashing uninhibited button aggression and knockout pressure to capture the title (e.g., slotted with Model G).
 
 ### Summary Table of Model Lineage
 
@@ -141,7 +147,8 @@ Rather than treating model development as a single monolithic training run, Texa
 | **Model C** | 138 | 6 (Flat) | ICM Equity & Stack Depth Ratios | Learned chip survival and stack preservation under escalating blinds |
 | **Model D** | 152 | 6 (Flat) | Active Opponent Exploiter & Shaping | Learned archetype exploitation; targeted bluffs and value bets |
 | **Model E** | 158 | 6 (Decoupled) | Self-Play League & Decoupled Action Head | Resolved bet-sizing collapse; learned robust multi-agent self-play balance |
-| **Model F** | **168** | **8 (Decoupled)** | **8-Action Space, Uncapped Blinds, High LR** | **Added 33% micro-bets and 150% overbets; eliminated tournament stalling** |
+| **Model F** | 168 | 8 (Decoupled) | 8-Action Space, Uncapped Blinds, High LR | Added 33% micro-bets and 150% overbets; eliminated tournament stalling |
+| **Model G** | **168** | **8 (Decoupled)** | **Linear Chip-EV, 100 BB Heads-Up Self-Play** | **Dedicated 1v1 specialist; eliminates endgame over-folding and maximizes title capture** |
 
 ---
 
@@ -157,13 +164,13 @@ To establish that the CardShark-RL architecture is genuinely generalizable acros
 ### 5.2 2-7 Triple Draw Lowball
 2-7 Triple Draw is an inverted-hierarchy poker variant: the lowest traditional poker hand wins the pot (Aces are strictly high, while straights and flushes penalize the player; the nut hand is 2-3-4-5-7 offsuit). The game features three successive draw rounds and four betting rounds.
 
-**How It Was Implemented:** The environment implements a specialized lowball hand evaluator alongside a multi-round game loop featuring three sequential draw phases and four betting rounds. The Gym observation wrapper accommodates multiple draw rounds and negative card value logic without requiring changes to the core reinforcement learning pipeline, verifying that our state representations and action abstractions are truly modular.
+**How It Was Implemented & Architecture Transfer:** Because 2-7 Triple Draw was developed after the 5-Card Draw framework had matured, its agent (Model 27-A) was directly synthesized on top of the mastered Model F architecture from 5-Card Draw. Rather than starting from an unguided baseline, Model 27-A inherited the multi-head card attention feature extractor, the two-stage decoupled action policy, and dominated discard masking. The environment integrates a specialized lowball hand evaluator alongside a multi-round game loop tracking draw actions across all three discard phases. By transferring the architectural innovations of Model F to an inverted-hierarchy ruleset, the agent achieved immediate, overwhelming strategic dominance, verifying that our feature representations and policy designs generalize across disparate game mechanics with minimal adaptation.
 
 ---
 
 ## 6. Academic Paper Focus & Planned Ablation Studies
 
-For our term paper, we plan to center the core narrative on Texas Hold'em, using 5-Card Draw and 2-7 Triple Draw as cross-game generalization case studies. To ensure that our study makes a substantive scientific contribution beyond simply reporting that a neural network learned to play cards, we have designed five targeted ablation experiments that isolate and quantify the specific contribution of each architectural component:
+For our paper, we plan to center the core narrative on Texas Hold'em, using 5-Card Draw and 2-7 Triple Draw as cross-game generalization case studies. To ensure that our study makes a substantive scientific contribution beyond simply reporting that a neural network learned to play cards, we have designed six targeted ablation experiments that isolate and quantify the specific contribution of each architectural component:
 
 ### 6.1 Ablation 1: The Showdown Avoidance Curve
 - **Hypothesis:** Encouraging an agent to win pots uncontested reduces exposure to showdown variance, but excessive bonuses induce destructive over-bluffing.
@@ -184,3 +191,7 @@ For our term paper, we plan to center the core narrative on Texas Hold'em, using
 ### 6.5 Ablation 5: Self-Play League Sparring vs. Static Bot Training
 - **Hypothesis:** Training in a Prioritized Fictitious Self-Play league pool produces policies that generalize to diverse and unseen opponent styles, whereas training strictly against fixed heuristic bots results in severe style overfitting.
 - **Methodology:** We will train one agent exclusively against static heuristic bots and a second agent inside our self-play league pool. Both models will then be evaluated against novel, previously unencountered opponent archetypes (such as erratic random callers, extreme hyper-maniacs, and unbluffable stations). We will measure behavioral exploitability to verify that self-play sparring confers genuine strategic robustness.
+
+### 6.6 Ablation 6: Composite Regime-Switching vs. Monolithic Policies
+- **Hypothesis:** Monolithic policies trained exclusively under multi-player tournament incentives suffer from an objective mismatch: they learn risk-averse chip preservation that causes them to play overly passively once the field narrows to heads-up play. Conversely, a modular Composite Model pairing a tournament specialist (Model F) with a dedicated heads-up specialist (Model G) will significantly elevate heads-up conversion and overall championship titles.
+- **Methodology:** We will evaluate the Tournament Specialist alone (Model F), the Heads-Up Specialist alone (Model G), and the Composite Model (Model F + Model G) across both dedicated 1v1 duels and 5-player Sit-and-Go tournament benchmarks. We will measure button open frequencies, showdown avoidance, and heads-up conversion rates to quantify how modular regime-switching overcomes the limitations of monolithic deep RL.

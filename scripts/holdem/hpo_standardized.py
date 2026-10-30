@@ -58,6 +58,58 @@ from scripts.holdem.train_standardized import (
 )
 
 
+def evaluate_model_heads_up(
+    model: MaskablePPO,
+    spec: Dict[str, Any],
+    n_sessions: int = 30,
+    seed: int = 10000,
+) -> Dict[str, Any]:
+    """Standardized 1v1 heads-up evaluation against benchmark opponents."""
+    env = HoldemPokerGymEnv(
+        num_seats=5,
+        starting_chips=200,
+        small_blind=1,
+        big_blind=2,
+        hero_seat=0,
+        max_hands_per_session=150,
+        blind_escalation_interval=15,
+        heads_up_mode=True,
+        obs_version=spec["obs_version"],
+        pos_gto_masking=spec["pos_gto_masking"],
+        exploitative_masking=spec["exploitative_masking"],
+        uncontested_pot_bonus=spec["default_uncontested_bonus"],
+        rng_seed=seed,
+    )
+    wins = 0
+    net_chips = []
+    hands_played = []
+    for s_idx in range(n_sessions):
+        obs, _ = env.reset(seed=seed + s_idx * 77)
+        done = False
+        while not done:
+            mask = env.action_masks()
+            action, _ = model.predict(obs, action_masks=mask, deterministic=True)
+            obs, _, terminated, truncated, _ = env.step(int(action))
+            done = terminated or truncated
+        hero_chips = env.env.seats[0].chips
+        net_chips.append(hero_chips - 200)
+        hands_played.append(env.env.hands_played)
+        if hero_chips > 200:
+            wins += 1
+
+    win_rate = float(wins) / float(n_sessions)
+    avg_chips = float(np.mean(net_chips))
+    score = (win_rate * 100.0) + (avg_chips / 5.0)
+    return {
+        "n_sessions": n_sessions,
+        "wins": wins,
+        "win_rate": win_rate,
+        "avg_chips": avg_chips,
+        "avg_hands": float(np.mean(hands_played)),
+        "score": score,
+    }
+
+
 def parse_search_space_json(search_space_path: str) -> Dict[str, Dict[str, Any]]:
     """
     Parses a search space JSON file into a standardized parameter definition dict:
@@ -197,6 +249,8 @@ class StandardizedHPO:
         trial_idx = len(self.trials_history)
         trial_seed = self.seed + trial_idx * 100
         params = sample_trial_params(trial, self.parsed_space)
+        if self.model_letter == "g":
+            params["icm_equity_weight"] = 0.0
 
         print(f"\n{'='*70}")
         print(f"  [TRIAL {trial_idx+1}/{self.n_trials}] Model: {self.model_letter.upper()}")
@@ -214,11 +268,18 @@ class StandardizedHPO:
         # Setup environments
         league_pool = None
         if self.spec["use_league"]:
-            anchor_path = os.path.join(self.models_dir, "model_holdem_e_best.zip")
-            if not os.path.exists(anchor_path):
-                anchor_path = os.path.join(self.models_dir, "model_holdem_d_best.zip")
+            anchor_candidate = self.spec.get("anchor_model_path")
+            if anchor_candidate and os.path.exists(anchor_candidate):
+                anchor_path = anchor_candidate
+            else:
+                anchor_path = os.path.join(self.models_dir, "model_holdem_f_champion_2.5m.zip")
+                if not os.path.exists(anchor_path):
+                    anchor_path = os.path.join(self.models_dir, "model_holdem_e_best.zip")
+                    if not os.path.exists(anchor_path):
+                        anchor_path = os.path.join(self.models_dir, "model_holdem_d_best.zip")
+            league_sub = self.spec.get("league_dir", f"league_hpo_{self.model_letter}")
             league_pool = HoldemLeaguePool(
-                league_dir=os.path.join(self.models_dir, f"league_hpo_{self.model_letter}"),
+                league_dir=os.path.join(self.models_dir, league_sub),
                 anchor_model_path=anchor_path,
                 max_snapshots=5,
             )
@@ -279,12 +340,20 @@ class StandardizedHPO:
         elapsed_mins = (time.time() - t_start) / 60.0
 
         # Evaluate trial
-        eval_metrics = evaluate_model_tournament(
-            model=model,
-            spec=self.spec,
-            n_sessions=self.eval_sessions,
-            seed=trial_seed + 9999,
-        )
+        if self.spec.get("heads_up_mode", False):
+            eval_metrics = evaluate_model_heads_up(
+                model=model,
+                spec=self.spec,
+                n_sessions=self.eval_sessions,
+                seed=trial_seed + 9999,
+            )
+        else:
+            eval_metrics = evaluate_model_tournament(
+                model=model,
+                spec=self.spec,
+                n_sessions=self.eval_sessions,
+                seed=trial_seed + 9999,
+            )
         score = float(eval_metrics["score"])
 
         print(f"  [Trial {trial.number+1} Result] Win Rate: {eval_metrics['win_rate']*100:.1f}% | "
@@ -374,7 +443,7 @@ class StandardizedHPO:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Standardized Optuna HPO Runner for Texas Hold'em")
-    parser.add_argument("--model", type=str, default="f", choices=["a", "b", "c", "d", "e", "f"], help="Model generation (a..f)")
+    parser.add_argument("--model", type=str, default="g", choices=["a", "b", "c", "d", "e", "f", "g"], help="Model generation (a..g)")
     parser.add_argument("--search-space", type=str, default=None, help="Path to search space JSON file")
     parser.add_argument("--n-trials", type=int, default=25, help="Number of Optuna trials")
     parser.add_argument("--timesteps-per-trial", type=int, default=250_000, help="Timesteps per trial")

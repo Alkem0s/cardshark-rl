@@ -34,6 +34,7 @@ class HoldemOpponent:
         self.opponent_id = opponent_id
         self.name = name
         self.rng = rng or np.random.default_rng()
+        self.is_neural: bool = False
 
     def act(
         self,

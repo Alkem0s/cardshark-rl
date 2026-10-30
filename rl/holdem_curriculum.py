@@ -48,6 +48,7 @@ class HoldemCurriculumRewardCallback(BaseCallback):
             )
 
         self.current_mult = float(mult)
+        overall_progress = min(1.0, max(0.0, float(t) / float(self.total_timesteps)))
 
         # Broadcast to vectorized environment workers
         if getattr(self, "model", None) is not None:
@@ -55,14 +56,17 @@ class HoldemCurriculumRewardCallback(BaseCallback):
                 env = self.training_env
                 if env is not None and hasattr(env, "set_attr"):
                     env.set_attr("curriculum_shaping_mult", self.current_mult)
+                    env.set_attr("league_progress", overall_progress)
             except Exception:
                 pass
 
         if t - self.last_logged_step >= self.log_freq and self.verbose > 0:
             self.last_logged_step = t
             stage = "Stage 1 (Scaffolding)" if t <= self.scaffold_steps else "Stage 2 (Pure-Equity)"
+            p_neural = (0.15 + 0.60 * overall_progress) * 100.0
+            p_heur = max(0.0, 100.0 - p_neural - 5.0)
             print(
-                f"  [Curriculum {t:,} steps] {stage} | Shaping Multiplier: {self.current_mult:.4f}"
+                f"  [Curriculum {t:,} steps] {stage} | Shaping: {self.current_mult:.4f} | Sparring: {p_heur:.0f}% Heuristics / {p_neural:.0f}% League"
             )
 
         return True

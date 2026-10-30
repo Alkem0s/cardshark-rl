@@ -166,22 +166,19 @@ def build_docx_report(output_path):
         return p
 
     # --- Title & Metadata ---
-    add_title("CardShark-RL: Autonomous Reinforcement Learning for Card Games")
-    add_subtitle("System Architecture, Methodology Implementation, and Academic Research Plan")
+    add_title("CardShark-RL: Autonomous Reinforcement Learning for Card Games and Tournament Play")
+    add_subtitle("Comprehensive System Architecture, Methodology Implementation, and Academic Research Plan")
     add_meta([
-        "Course: CENG 454: Reinforcement Learning (Term Project)",
-        "Department of Computer Engineering, İzmir Kâtip Çelebi University",
+        "Institution: İzmir Kâtip Çelebi University, Department of Computer Engineering",
         "Project Team: Alkım Gönenç Efe, Sarp Sünbül, Damla Parlakyıldız",
-        "Date: October 2026"
     ])
 
     # --- Section 1: Overview & Motivation ---
     add_h1("1. Project Overview & Research Motivation")
     add_body(
         "CardShark-RL is an autonomous reinforcement learning framework engineered to solve multi-player, imperfect-information card games. "
-        "The project was initiated as our term project for CENG 454 (Reinforcement Learning) with the primary goal of investigating whether "
-        "model-free deep reinforcement learning algorithms can learn sound, adaptive tournament strategies on standard commodity hardware, "
-        "without relying on heavy real-time tree solvers or massive computing clusters."
+        "The project has the primary goal of investigating whether model-free deep reinforcement learning algorithms can learn sound, adaptive tournament "
+        "strategies on standard commodity hardware, without relying on heavy real-time tree solvers or massive computing clusters."
     )
     add_body(
         "Card games represent a classic imperfect-information challenge in artificial intelligence. Unlike board games such as chess or Go, "
@@ -192,7 +189,7 @@ def build_docx_report(output_path):
     )
     add_body(
         "This document serves two primary functions: first, as an accessible technical reference bringing all team members and co-authors up to speed "
-        "on the system's architecture and design decisions; and second, as a structured methodology overview for our faculty advisor and the foundation for our upcoming paper."
+        "on the system's architecture and design decisions; and second, the foundation for our upcoming paper."
     )
 
     # --- Section 2: What Sets CardShark-RL Apart ---
@@ -277,16 +274,19 @@ def build_docx_report(output_path):
         "or extracting value bets against calling stations without bluffing."
     )
 
-    add_h2("3.4 Self-Play League Sparring (Prioritized Fictitious Self-Play)")
+    add_h2("3.4 Self-Play League Sparring & Dynamic Opponent Curriculum")
     add_body(
         "The Problem: Training an agent exclusively against static, rule-based bots causes severe overfitting: the agent learns to exploit the hardcoded programming quirks of those bots, "
-        "but completely falls apart when exposed to novel styles or aggressive neural counter-strategies."
+        "but completely falls apart when exposed to novel styles or aggressive neural counter-strategies. Conversely, exposing an untrained network immediately to unconstrained self-play "
+        "often leads to policy destabilization or bizarre exploratory loops before basic card fundamentals are established."
     )
     add_body(
-        "How It Was Implemented: We implemented an autonomous self-play league pool. During training, the framework periodically saves frozen snapshots of the learning policy. "
-        "When generating training rollout tables, seats are dynamically populated using a prioritized mixture: fixed heuristic bots are retained to maintain basic poker fundamentals, "
-        "while historical neural checkpoints are sampled from the pool based on competitive difficulty. Past checkpoints that present a high challenge to the current policy are sampled more frequently. "
-        "Sparring against diverse past iterations of itself prevents the policy from settling into predictable, easily exploitable habits."
+        "How It Was Implemented: We implemented an autonomous self-play league pool governed by a dynamic curriculum schedule. "
+        "Training begins with an emphasis on diverse heuristic bots (tight-aggressive, loose-aggressive, and passive calling stations) to ground the policy in solid poker discipline—such as "
+        "folding unplayable holdings pre-flop, respecting aggressive betting, and extracting value from calling stations. As training progresses, the opponent distribution systematically "
+        "shifts toward self-play league sparring. Checkpoints of the learning policy are saved periodically into the pool. By late-stage training, the vast majority of sparring occurs against "
+        "past neural iterations and anchor champions sampled via Prioritized Fictitious Self-Play. This curriculum ensures that the agent first masters fundamental game discipline "
+        "before refining high-level counter-strategies against adaptive neural adversaries."
     )
 
     add_h2("3.5 Tournament Chip Valuation (Independent Chip Model / ICM Equity)")
@@ -413,9 +413,9 @@ def build_docx_report(output_path):
     doc.add_paragraph().paragraph_format.space_after = Pt(12)
 
     # --- Section 4: Progressive Model Iterations ---
-    add_h1("4. Progressive Model Iterations (Texas Hold'em Models A through F)")
+    add_h1("4. Progressive Model Iterations (Texas Hold'em Models A through G)")
     add_body(
-        "Rather than treating model development as a single monolithic training run, Texas Hold'em models were evolved across six sequential generations (Model A through Model F). "
+        "Rather than treating model development as a single monolithic training run, Texas Hold'em models were evolved across seven sequential generations (Model A through Model G). "
         "Each iteration was designed to diagnose and resolve specific behavioral and game-theoretic flaws observed in previous versions:"
     )
 
@@ -450,9 +450,23 @@ def build_docx_report(output_path):
         "Uncapped blind escalation up to level 7 was introduced to eliminate tournament stalling, and hyperparameter boundaries were systematically screened across "
         "learning rates, entropy schedules, and reward shaping coefficients to ensure stable policy convergence."
     )
+    add_bullet(
+        "Model G (1v1 Heads-Up Specialist): ",
+        "A dedicated heads-up specialist trained exclusively in two-player environments under pure linear chip-EV, 100 big blind deep stacks, and aggressive button exploitation. "
+        "By removing tournament ICM survival penalties and utilizing a dynamic curriculum that transitions from heuristic fundamentals to self-play dominance, "
+        "Model G learns wide button opening ranges, persistent continuation betting, and aggressive endgame extraction without fear of tournament elimination."
+    )
+
+    add_h2("4.1 The Composite Model Architecture")
+    add_body(
+        "To resolve the fundamental objective mismatch between multi-player tournament survival (where chips lost are worth more than chips won) and heads-up endgame play "
+        "(where the game reverts to zero-sum linear chip extraction), CardShark-RL introduces a modular Composite Model. "
+        "Rather than hardcoding specific networks, the Composite Model provides a flexible, plug-and-play architecture with two explicit policy slots: "
+        "a Tournament Model Slot (operating when 3 or more competitors remain, e.g., Model F) and a Heads-Up Model Slot (automatically engaging when play reaches the final 2 competitors, e.g., Model G)."
+    )
 
     # Summary Table of Model Lineage (NO WIN RATES, NO FILE PATHS)
-    table = doc.add_table(rows=7, cols=5)
+    table = doc.add_table(rows=8, cols=5)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
     set_table_borders(table)
@@ -481,7 +495,8 @@ def build_docx_report(output_path):
         ("Model C", "138", "6 (Flat)", "ICM Equity & Stack Depth Ratios", "Learned chip survival and stack preservation under escalating blinds"),
         ("Model D", "152", "6 (Flat)", "Active Opponent Exploiter & Shaping", "Learned archetype exploitation; targeted bluffs and value bets"),
         ("Model E", "158", "6 (Decoupled)", "Self-Play League & Decoupled Action Head", "Resolved bet-sizing collapse; learned robust multi-agent self-play balance"),
-        ("Model F", "168", "8 (Decoupled)", "8-Action Space, Uncapped Blinds, High LR", "Added 33% micro-bets and 150% overbets; eliminated tournament stalling")
+        ("Model F", "168", "8 (Decoupled)", "8-Action Space, Uncapped Blinds, High LR", "Added 33% micro-bets and 150% overbets; eliminated tournament stalling"),
+        ("Model G", "168", "8 (Decoupled)", "Linear Chip-EV, 100 BB Heads-Up Self-Play", "Dedicated 1v1 specialist; eliminates endgame over-folding and maximizes title capture")
     ]
 
     for row_idx, row_data in enumerate(data, start=1):
@@ -496,7 +511,7 @@ def build_docx_report(output_path):
             r = p.add_run(text)
             r.font.name = "Calibri"
             r.font.size = Pt(8.5)
-            if row_idx == 6:
+            if row_idx == 7:
                 r.font.bold = True
                 r.font.color.rgb = COLOR_PRIMARY
             else:
@@ -541,9 +556,9 @@ def build_docx_report(output_path):
     # --- Section 6: Paper Roadmap & Ablation Studies ---
     add_h1("6. Academic Paper Focus & Planned Ablation Studies")
     add_body(
-        "For our term paper, we plan to center the core narrative on Texas Hold'em, using 5-Card Draw and 2-7 Triple Draw as cross-game generalization case studies. "
+        "For our paper, we plan to center the core narrative on Texas Hold'em, using 5-Card Draw and 2-7 Triple Draw as cross-game generalization case studies. "
         "To ensure that our study makes a substantive scientific contribution beyond simply reporting that a neural network learned to play cards, "
-        "we have designed five targeted ablation experiments that isolate and quantify the specific contribution of each architectural component:"
+        "we have designed six targeted ablation experiments that isolate and quantify the specific contribution of each architectural component:"
     )
 
     add_h2("6.1 Ablation 1: The Showdown Avoidance Curve")
@@ -596,6 +611,19 @@ def build_docx_report(output_path):
         "Methodology: We will train one agent exclusively against static heuristic bots and a second agent inside our self-play league pool. Both models will then be evaluated "
         "against novel, previously unencountered opponent archetypes (such as erratic random callers, extreme hyper-maniacs, and unbluffable stations). "
         "We will measure behavioral exploitability to verify that self-play sparring confers genuine strategic robustness."
+    )
+
+    add_h2("6.6 Ablation 6: Composite Regime-Switching vs. Monolithic Policies")
+    add_body(
+        "Hypothesis: Monolithic policies trained exclusively under multi-player tournament incentives suffer from an objective mismatch: "
+        "they learn risk-averse chip preservation that causes them to play overly passively once the field narrows to heads-up play. "
+        "Conversely, a modular Composite Model pairing a tournament specialist (Model F) with a dedicated heads-up specialist (Model G) "
+        "will significantly elevate heads-up conversion and overall championship titles."
+    )
+    add_body(
+        "Methodology: We will evaluate the Tournament Specialist alone (Model F), the Heads-Up Specialist alone (Model G), and the Composite Model (Model F + Model G) "
+        "across both dedicated 1v1 duels and 5-player Sit-and-Go tournament benchmarks. By measuring button open frequencies, showdown avoidance, "
+        "and heads-up conversion rates, we will quantify how modular regime-switching overcomes the limitations of monolithic deep RL."
     )
 
     # Save document

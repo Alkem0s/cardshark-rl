@@ -48,7 +48,9 @@ class HoldemLeagueOpponent(HoldemOpponent):
         # Detect observation version from model observation space
         if self.model is not None and hasattr(self.model, "observation_space"):
             dim = int(self.model.observation_space.shape[0])
-            if dim == 158:
+            if dim == 168:
+                self.obs_version = "f"
+            elif dim == 158:
                 self.obs_version = "e"
             elif dim == 152:
                 self.obs_version = "d"
@@ -164,10 +166,15 @@ class HoldemLeaguePool:
         self.anchor_model_path = anchor_model_path
         self.max_snapshots = max_snapshots
         self.snapshots: List[str] = []
+        self.current_progress: float = 0.0
 
         if league_dir:
             os.makedirs(league_dir, exist_ok=True)
             self.refresh_snapshots()
+
+    def set_progress(self, progress: float):
+        """Updates the training progress in [0.0, 1.0] for dynamic curriculum sampling."""
+        self.current_progress = float(np.clip(progress, 0.0, 1.0))
 
     def refresh_snapshots(self) -> List[str]:
         """Discovers all valid .zip checkpoints in the league directory."""
@@ -184,57 +191,68 @@ class HoldemLeaguePool:
             if len(self.snapshots) > self.max_snapshots:
                 self.snapshots.pop(0)
 
+    def register_checkpoint(self, model_path: str):
+        """Compatibility alias for add_snapshot."""
+        return self.add_snapshot(model_path)
+
     def sample_opponent(
         self,
         seat_idx: int,
         rng: Optional[np.random.Generator] = None,
+        progress: Optional[float] = None,
     ) -> HoldemOpponent:
         """
-        Samples an opponent according to PFSP distribution:
-        - 35%: Historical Model E snapshots (or anchor if none)
-        - 25%: Anchor Model D Champion (74% baseline)
-        - 30%: Jittered Heuristics (LAG, TAG, CallingStation)
-        - 10%: Exploratory / Random
+        Samples an opponent according to dynamic PFSP curriculum distribution:
+        - At progress = 0.0: 80% Heuristic Fundamentals (TAG, LAG, Calling Station),
+                             15% Anchor Champion, 5% Random.
+        - At progress = 1.0: 75% Self-Play League Sparring (45% Snapshots + 30% Anchor),
+                             20% Heuristics, 5% Random.
         """
         r = rng or np.random.default_rng()
+        p = float(np.clip(progress if progress is not None else self.current_progress, 0.0, 1.0))
         roll = r.random()
 
         has_anchor = os.path.exists(self.anchor_model_path)
         has_snapshots = len(self.snapshots) > 0
 
-        # 1. Historical Snapshots (20%)
-        if roll < 0.20 and (has_snapshots or has_anchor):
-            pool = self.snapshots if has_snapshots else [self.anchor_model_path]
-            chosen = str(r.choice(pool))
-            return HoldemLeagueOpponent(
-                model_path=chosen,
-                opponent_id=seat_idx,
-                rng=r,
-                deterministic=(r.random() < 0.70),
-                temperature=0.08,
-            )
+        # Dynamic probabilities:
+        # Neural/Self-play probability scales smoothly from 15% to 75%
+        p_neural = 0.15 + 0.60 * p
+        p_random = 0.05
 
-        # 2. Anchor Baseline Champion (15%)
-        elif roll < 0.35 and has_anchor:
-            return HoldemLeagueOpponent(
-                model_path=self.anchor_model_path,
-                opponent_id=seat_idx,
-                name="Anchor_ModelD_Champion",
-                rng=r,
-                deterministic=True,
-                temperature=0.05,
-            )
+        # 1. Neural Self-Play Sparring
+        if roll < p_neural and (has_snapshots or has_anchor):
+            # If snapshots exist, snapshot share scales from 10% up to 60% of neural sparring
+            snapshot_share = min(0.60, 0.10 + 0.50 * p) if has_snapshots else 0.0
+            if has_snapshots and r.random() < snapshot_share:
+                chosen = str(r.choice(self.snapshots))
+                return HoldemLeagueOpponent(
+                    model_path=chosen,
+                    opponent_id=seat_idx,
+                    rng=r,
+                    deterministic=(r.random() < 0.70),
+                    temperature=0.08,
+                )
+            elif has_anchor:
+                anchor_name = f"Anchor_{os.path.basename(self.anchor_model_path).replace('.zip', '')}"
+                return HoldemLeagueOpponent(
+                    model_path=self.anchor_model_path,
+                    opponent_id=seat_idx,
+                    name=anchor_name,
+                    rng=r,
+                    deterministic=(r.random() < 0.85),
+                    temperature=0.05,
+                )
 
-        # 3. Exploratory Random Bot (10%)
-        elif roll >= 0.90:
+        # 2. Exploratory Random Bot (5%)
+        elif roll >= (1.0 - p_random):
             return RandomHoldemBot(opponent_id=seat_idx, rng=r)
 
-        # 4. Jittered Heuristic Archetypes (55% or fallback)
+        # 3. Jittered Heuristic Archetypes (80% down to 20%)
+        bot_choice = r.choice(["lag", "tag", "station"])
+        if bot_choice == "lag":
+            return LAGBot(opponent_id=seat_idx, rng=r)
+        elif bot_choice == "tag":
+            return TAGBot(opponent_id=seat_idx, rng=r)
         else:
-            bot_choice = r.choice(["lag", "tag", "station"])
-            if bot_choice == "lag":
-                return LAGBot(opponent_id=seat_idx, rng=r)
-            elif bot_choice == "tag":
-                return TAGBot(opponent_id=seat_idx, rng=r)
-            else:
-                return CallingStationBot(opponent_id=seat_idx, rng=r)
+            return CallingStationBot(opponent_id=seat_idx, rng=r)

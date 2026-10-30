@@ -471,6 +471,7 @@ class HoldemPokerGymEnv(gym.Env):
         rng_seed: Optional[int] = None,
         curriculum_shaping_mult: float = 1.0,
         league_pool: Optional[Any] = None,
+        heads_up_mode: bool = False,
     ):
         super().__init__()
         self.hero_seat = hero_seat
@@ -483,6 +484,8 @@ class HoldemPokerGymEnv(gym.Env):
         self.dominated_masking = dominated_masking
         self.curriculum_shaping_mult = float(curriculum_shaping_mult)
         self.league_pool = league_pool
+        self.heads_up_mode = bool(heads_up_mode)
+        self.league_progress: float = 0.0
         self.obs_version = obs_version.lower()
         if self.obs_version == "a":
             self.obs_dim = OBS_DIM_HOLDEM_A
@@ -545,6 +548,7 @@ class HoldemPokerGymEnv(gym.Env):
             tracker=self.tracker,
             opponents=self.opponents,
             rng=self.rng,
+            heads_up_mode=self.heads_up_mode,
         )
 
         self.action_space = spaces.Discrete(self.num_actions)
@@ -555,8 +559,12 @@ class HoldemPokerGymEnv(gym.Env):
     def _init_opponents(self):
         for s in range(self.num_seats):
             if s != self.hero_seat:
+                if self.heads_up_mode and s > 1:
+                    continue
                 if self.league_pool is not None:
-                    self.opponents[s] = self.league_pool.sample_opponent(s, rng=self.rng)
+                    self.opponents[s] = self.league_pool.sample_opponent(
+                        s, rng=self.rng, progress=self.league_progress
+                    )
                 else:
                     self.opponents[s] = make_random_holdem_opponent(
                         opp_id=s,
@@ -570,6 +578,9 @@ class HoldemPokerGymEnv(gym.Env):
             self.rng = np.random.default_rng(seed)
             self.env.rng = self.rng
             self.env.deck.rng = self.rng
+            self._init_opponents()
+        elif self.league_pool is not None:
+            # Refresh opponents according to updated curriculum progress on session resets
             self._init_opponents()
 
         self.tracker.reset_all()

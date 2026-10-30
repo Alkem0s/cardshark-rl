@@ -1,0 +1,16 @@
+{
+  "learning_rate": 0.00020613497108891397,
+  "initial_ent_coef": 0.022237967895530876,
+  "min_ent_coef": 0.0046415316921425195,
+  "clip_range": 0.22044409108344387,
+  "uncontested_pot_bonus": 0.013033559640815694,
+  "exploit_value_bonus": 0.05846779008116723,
+  "exploit_steal_bonus": 0.03738508717482608,
+  "bluff_station_penalty": 0.06612212872540044,
+  "pot_control_bonus": 0.02359395304685146,
+  "elimination_penalty": 2.492992607303067,
+  "win_bonus": 2.5767863860677203,
+  "scaffold_steps": 120000,
+  "min_shaping_mult": 0.016073441537982288,
+  "icm_equity_weight": 0.0
+}
